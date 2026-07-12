@@ -116,6 +116,43 @@ function renderSummary(container, data) {
 }
 
 // ---------------------------------------------------------
+// Image compression helper — resizes/compresses before upload
+// so large phone-camera photos don't hit Vercel's ~4.5MB request limit
+// ---------------------------------------------------------
+function compressImage(file, maxWidth = 1400, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return reject(new Error("Image compress nahi ho saki."));
+            resolve(new File([blob], "bill.jpg", { type: "image/jpeg" }));
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+      img.onerror = () => reject(new Error("Image load nahi ho saki."));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error("File read nahi ho saka."));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---------------------------------------------------------
 // Option 1: Bill upload submit
 // ---------------------------------------------------------
 document.getElementById("submitBillBtn").addEventListener("click", async () => {
@@ -137,8 +174,11 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
   loading.classList.remove("hidden");
 
   try {
+    // Compress image first so large phone photos don't hit Vercel's request size limit
+    const compressedFile = await compressImage(fileInput.files[0]);
+
     const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
+    formData.append("file", compressedFile);
     formData.append("rate_per_unit", rate);
 
     const res = await fetch(`${window.API_BASE_URL}/api/analyze-bill`, {
@@ -147,8 +187,14 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Kuch masla ho gaya.");
+      let message = `Server error (status ${res.status}).`;
+      try {
+        const err = await res.json();
+        message = err.detail || message;
+      } catch (_) {
+        // Response wasn't JSON (e.g. an HTML error page) — keep the status-based message
+      }
+      throw new Error(message);
     }
 
     const data = await res.json();
@@ -192,8 +238,14 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Kuch masla ho gaya.");
+      let message = `Server error (status ${res.status}).`;
+      try {
+        const err = await res.json();
+        message = err.detail || message;
+      } catch (_) {
+        // Response wasn't JSON — keep the status-based message
+      }
+      throw new Error(message);
     }
 
     const data = await res.json();
