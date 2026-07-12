@@ -2,13 +2,13 @@
 
 **Kya badla:** Ab backend aur frontend **dono ek hi Vercel project** mein hain — koi
 alag Render/HF backend nahi chahiye. Vercel ka free "Hobby" plan bilkul card-free hai
-aur Python serverless functions support karta hai.
+aur Python serverless functions support karta hai .
 
 ---
 
 ## STEP 1: GitHub Repository
 
-1. https://github.com par account banao (agar nahi hai).
+1. https://github.com par account banao 
 2. Naya repo banao: `bijli-bachao-ai`
 3. Is poori `bijli-bachao-v2` folder ka content us repo mein push karo.
 
