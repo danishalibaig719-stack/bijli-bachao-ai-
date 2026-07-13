@@ -116,6 +116,44 @@ function renderSummary(container, data) {
 }
 
 // ---------------------------------------------------------
+// File selection feedback (Option 1)
+// Shows filename + thumbnail the moment a file is picked, so the
+// user always sees confirmation that the selection actually registered.
+// ---------------------------------------------------------
+const billImageInput = document.getElementById("billImageInput");
+const billPreview = document.getElementById("billPreview");
+const billPreviewImg = document.getElementById("billPreviewImg");
+const billFileName = document.getElementById("billFileName");
+
+billImageInput.addEventListener("change", () => {
+  const errorBox = document.getElementById("billError");
+  errorBox.classList.add("hidden");
+
+  if (!billImageInput.files.length) {
+    billPreview.classList.add("hidden");
+    return;
+  }
+
+  const file = billImageInput.files[0];
+
+  if (!file.type.startsWith("image/")) {
+    errorBox.textContent = "Sirf image file select karein (JPG/PNG).";
+    errorBox.classList.remove("hidden");
+    billImageInput.value = "";
+    billPreview.classList.add("hidden");
+    return;
+  }
+
+  billFileName.textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    billPreviewImg.src = e.target.result;
+    billPreview.classList.remove("hidden");
+  };
+  reader.readAsDataURL(file);
+});
+
+// ---------------------------------------------------------
 // Image compression helper — resizes/compresses before upload
 // so large phone-camera photos don't hit Vercel's ~4.5MB request limit
 // ---------------------------------------------------------
@@ -153,6 +191,32 @@ function compressImage(file, maxWidth = 1400, quality = 0.75) {
 }
 
 // ---------------------------------------------------------
+// Fetch with retry — handles Gemini/Vercel 503 (temporary overload)
+// by retrying automatically before showing an error to the user.
+// ---------------------------------------------------------
+async function fetchWithRetry(url, options, retries = 2, delayMs = 2500) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url, options);
+    if (res.status !== 503 || attempt === retries) return res;
+    await new Promise(r => setTimeout(r, delayMs));
+  }
+}
+
+async function parseErrorResponse(res) {
+  if (res.status === 503) {
+    return "Server filhal busy hai (AI provider par zyada load hai). Meherbani karke 30-60 second baad dobara try karein.";
+  }
+  let message = `Server error (status ${res.status}).`;
+  try {
+    const err = await res.json();
+    message = err.detail || message;
+  } catch (_) {
+    // Response wasn't JSON (e.g. an HTML error page) — keep the status-based message
+  }
+  return message;
+}
+
+// ---------------------------------------------------------
 // Option 1: Bill upload submit
 // ---------------------------------------------------------
 document.getElementById("submitBillBtn").addEventListener("click", async () => {
@@ -181,20 +245,13 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
     formData.append("file", compressedFile);
     formData.append("rate_per_unit", rate);
 
-    const res = await fetch(`${window.API_BASE_URL}/api/analyze-bill`, {
+    const res = await fetchWithRetry(`${window.API_BASE_URL}/api/analyze-bill`, {
       method: "POST",
       body: formData
     });
 
     if (!res.ok) {
-      let message = `Server error (status ${res.status}).`;
-      try {
-        const err = await res.json();
-        message = err.detail || message;
-      } catch (_) {
-        // Response wasn't JSON (e.g. an HTML error page) — keep the status-based message
-      }
-      throw new Error(message);
+      throw new Error(await parseErrorResponse(res));
     }
 
     const data = await res.json();
@@ -231,21 +288,14 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
   loading.classList.remove("hidden");
 
   try {
-    const res = await fetch(`${window.API_BASE_URL}/api/analyze-manual`, {
+    const res = await fetchWithRetry(`${window.API_BASE_URL}/api/analyze-manual`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rate_per_unit: parseFloat(rate), appliances })
     });
 
     if (!res.ok) {
-      let message = `Server error (status ${res.status}).`;
-      try {
-        const err = await res.json();
-        message = err.detail || message;
-      } catch (_) {
-        // Response wasn't JSON — keep the status-based message
-      }
-      throw new Error(message);
+      throw new Error(await parseErrorResponse(res));
     }
 
     const data = await res.json();
