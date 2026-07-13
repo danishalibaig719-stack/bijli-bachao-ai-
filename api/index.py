@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import List
@@ -122,6 +123,29 @@ def ensure_client():
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured on server.")
 
 
+def call_gemini_with_retry(contents, retries: int = 3, base_delay: float = 2.0):
+    """
+    Calls Gemini, automatically retrying if the model is temporarily
+    overloaded (503 / UNAVAILABLE). Uses simple exponential backoff.
+    Raises the last error if all retries are exhausted.
+    """
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            return client.models.generate_content(
+                model="gemini-flash-latest",
+                contents=contents
+            )
+        except Exception as e:
+            last_error = e
+            error_text = str(e)
+            is_overloaded = "503" in error_text or "UNAVAILABLE" in error_text or "overloaded" in error_text.lower()
+            if is_overloaded and attempt < retries:
+                time.sleep(base_delay * (attempt + 1))  # 2s, 4s, 6s...
+                continue
+            raise last_error
+
+
 # ------------------------------------------------------------------
 # 5. Routes (paths include /api prefix — matches Vercel's rewrite rule)
 # ------------------------------------------------------------------
@@ -144,17 +168,20 @@ def analyze_manual(payload: ManualRequest):
     )
 
     try:
-        response = client.models.generate_content(
-            model="gemini-flash-latest",
-            contents=prompt
-        )
+        response = call_gemini_with_retry(prompt)
         data = parse_ai_json(response.text)
         data["breakdown"] = breakdown
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="AI response could not be parsed. Try again.")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_text = str(e)
+        if "503" in error_text or "UNAVAILABLE" in error_text or "overloaded" in error_text.lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Server filhal busy hai (AI provider par zyada load hai). 30-60 second baad dobara try karein."
+            )
+        raise HTTPException(status_code=500, detail=error_text)
 
 
 @app.post("/api/analyze-bill")
@@ -166,10 +193,7 @@ async def analyze_bill(rate_per_unit: float = Form(35), file: UploadFile = File(
         img = Image.open(io.BytesIO(image_bytes))
 
         prompt = PROMPT_BILL_ONLY.format(rate=rate_per_unit)
-        response = client.models.generate_content(
-            model="gemini-flash-latest",
-            contents=[prompt, img]
-        )
+        response = call_gemini_with_retry([prompt, img])
         data = parse_ai_json(response.text)
         data["breakdown"] = [
             {"appliance": i["appliance"], "current_monthly_units": i["current_monthly_units"]}
@@ -179,4 +203,10 @@ async def analyze_bill(rate_per_unit: float = Form(35), file: UploadFile = File(
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="AI response could not be parsed. Try again.")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_text = str(e)
+        if "503" in error_text or "UNAVAILABLE" in error_text or "overloaded" in error_text.lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Server filhal busy hai (AI provider par zyada load hai). 30-60 second baad dobara try karein."
+            )
+        raise HTTPException(status_code=500, detail=error_text)
