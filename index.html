@@ -38,6 +38,12 @@
     <label class="field-label">Bill Ki Image</label>
     <input type="file" id="billImageInput" accept="image/*">
 
+    <!-- Visual confirmation that a file was actually selected -->
+    <div id="billPreview" class="file-preview hidden">
+      <img id="billPreviewImg" alt="Selected bill preview">
+      <span id="billFileName"></span>
+    </div>
+
     <label class="field-label">Rs per Unit (average rate)</label>
     <input type="number" id="rateBill" value="35">
 
