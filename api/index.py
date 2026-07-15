@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import google.generativeai as genai
@@ -16,10 +17,8 @@ if API_KEY:
 else:
     print("WARNING: GEMINI_API_KEY environment variable not found!")
 
-# We use gemini-1.5-flash because it is extremely fast and prevents 504 timeouts
 MODEL_NAME = "gemini-1.5-flash"
 
-# Minimalistic highly-optimized System Instructions to keep generation times under 5 seconds
 SYSTEM_INSTRUCTION = """
 You are a Pakistani energy expert. Analyze the input and output a strict JSON object.
 Do NOT write any markdown wrapping, code blocks, or conversational text outside the JSON.
@@ -29,18 +28,31 @@ This is critical to prevent system timeouts.
 
 def get_generation_config():
     return {
-        "temperature": 0.2, # Low temperature for faster, deterministic responses
+        "temperature": 0.2,
         "top_p": 0.95,
-        "max_output_tokens": 800, # Lower token limit forces faster generation
+        "max_output_tokens": 1000,
         "response_mime_type": "application/json"
     }
+
+def clean_and_parse_json(raw_text):
+    """
+    This helper function prevents 500 errors by cleaning up any markdown
+    formatting (like ```json ... ```) that Gemini might generate.
+    """
+    cleaned = raw_text.strip()
+    # Remove markdown code blocks if present
+    cleaned = re.sub(r"^```json\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^```\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"```$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip()
+    return json.loads(cleaned)
 
 @app.route("/api/analyze-manual", methods=["POST"])
 def analyze_manual():
     try:
         data = request.get_json()
         if not data or "appliances" not in data:
-            return jsonify({"detail": "Appliances data missing"}), 400
+            return jsonify({"detail": "Appliances data missing in request"}), 400
         
         rate = data.get("rate_per_unit", 35)
         appliances = data["appliances"]
@@ -77,9 +89,15 @@ def analyze_manual():
         )
         
         response = model.generate_content(prompt)
-        result = json.loads(response.text.strip())
+        
+        if not response or not response.text:
+            return jsonify({"detail": "Gemini API returned an empty response."}), 502
+            
+        result = clean_and_parse_json(response.text)
         return jsonify(result)
         
+    except json.JSONDecodeError as je:
+        return jsonify({"detail": f"JSON parsing failed. Raw response was: {response.text if 'response' in locals() else 'None'}"}), 500
     except Exception as e:
         return jsonify({"detail": f"Backend Error: {str(e)}"}), 500
 
@@ -93,9 +111,12 @@ def analyze_bill():
         file = request.files["file"]
         rate = float(request.form.get("rate_per_unit", 35))
         
-        # Read and open image
+        # Read and open image safely
         img_bytes = file.read()
-        image = Image.open(io.BytesIO(img_bytes))
+        try:
+            image = Image.open(io.BytesIO(img_bytes))
+        except Exception as img_err:
+            return jsonify({"detail": f"Uploaded file is not a valid image: {str(img_err)}"}), 400
         
         prompt = f"""
         Analyze this Pakistani electricity bill image. Extracted rate: Rs {rate} per unit.
@@ -134,12 +155,17 @@ def analyze_bill():
         )
         
         response = model.generate_content([prompt, image])
-        result = json.loads(response.text.strip())
+        
+        if not response or not response.text:
+            return jsonify({"detail": "Gemini API returned an empty response for the bill."}), 502
+            
+        result = clean_and_parse_json(response.text)
         return jsonify(result)
         
+    except json.JSONDecodeError as je:
+        return jsonify({"detail": f"JSON parsing failed for bill. Raw response was: {response.text if 'response' in locals() else 'None'}"}), 500
     except Exception as e:
         return jsonify({"detail": f"Backend Error: {str(e)}"}), 500
 
-# For local development
 if __name__ == "__main__":
     app.run(debug=True)
