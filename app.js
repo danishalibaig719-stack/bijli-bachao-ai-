@@ -58,20 +58,25 @@ function collectAppliances() {
 }
 
 // ---------------------------------------------------------
-// Helper: Fetch with retry on 503 error
+// Helper: Fetch with retry (specifically handling 429 and 503 errors)
 // ---------------------------------------------------------
-async function fetchWithRetry(url, options, retries = 3, delay = 2500) {
+async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
-      if (response.status === 503) {
-        throw new Error("503_SERVICE_UNAVAILABLE");
+      
+      // If hit 429 (Rate Limit) or 503 (Busy)
+      if (response.status === 429 || response.status === 503) {
+        throw new Error(response.status === 429 ? "429_RATE_LIMIT" : "503_SERVICE_UNAVAILABLE");
       }
       return response;
     } catch (err) {
-      if (err.message === "503_SERVICE_UNAVAILABLE" && i < retries - 1) {
-        console.warn(`Gemini API busy (503). Retrying ${i + 1}/${retries}...`);
+      // Retry if it's rate limit or temporary server error
+      if ((err.message === "429_RATE_LIMIT" || err.message === "503_SERVICE_UNAVAILABLE") && i < retries - 1) {
+        console.warn(`Gemini API busy/rate-limited (${err.message}). Retrying in ${delay / 1000}s... (Attempt ${i + 1}/${retries})`);
         await new Promise(res => setTimeout(res, delay));
+        // Double the delay for exponential backoff
+        delay *= 1.5; 
         continue;
       }
       throw err;
@@ -178,9 +183,29 @@ function compressImage(file, maxWidth = 1000, quality = 0.65) {
 }
 
 // ---------------------------------------------------------
+// Cooldown Button Helper (Blocks double-taps for 12 seconds)
+// ---------------------------------------------------------
+function setButtonCooldown(button, duration = 12000) {
+  const originalText = button.textContent;
+  button.disabled = true;
+  let secondsLeft = Math.ceil(duration / 1000);
+  
+  const interval = setInterval(() => {
+    secondsLeft--;
+    button.textContent = `Rukiye... (${secondsLeft}s)`;
+    if (secondsLeft <= 0) {
+      clearInterval(interval);
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }, 1000);
+}
+
+// ---------------------------------------------------------
 // Option 1: Bill upload submit
 // ---------------------------------------------------------
-document.getElementById("submitBillBtn").addEventListener("click", async () => {
+document.getElementById("submitBillBtn").addEventListener("click", async (e) => {
+  const btn = e.target;
   const fileInput = document.getElementById("billImageInput");
   const rate = document.getElementById("rateBill").value || 35;
   const loading = document.getElementById("billLoading");
@@ -197,9 +222,9 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
   }
   
   loading.classList.remove("hidden");
+  setButtonCooldown(btn, 12000); // 12 seconds break
   
   try {
-    // Quality ko thora aur compress kiya taake upload speed barh jaye
     const compressedFile = await compressImage(fileInput.files[0]);
     const formData = new FormData();
     formData.append("file", compressedFile);
@@ -211,11 +236,15 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
     });
     
     if (!res) {
-      throw new Error("AI models par load ki wajah se timeout ho gaya hai.");
+      throw new Error("AI models par load ki wajah se timeout ho gaya.");
     }
     
     if (res.status === 504) {
       throw new Error("504_TIMEOUT");
+    }
+    
+    if (res.status === 429) {
+      throw new Error("429_RATE_LIMIT");
     }
     
     if (!res.ok) {
@@ -231,13 +260,13 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
     billChartInstance = renderChart("billChart", data.breakdown, billChartInstance);
     renderSummary(document.getElementById("billSummary"), data);
     resultArea.classList.remove("hidden");
-  } catch (e) {
-    if (e.message.includes("504") || e.message === "504_TIMEOUT") {
-      errorBox.textContent = "Server Timeout (504 Error): AI model response dene mein zyada waqt le raha hai. Baraye meherbani thodi der baad dobara koshish karein.";
-    } else if (e.message.includes("503") || e.message.includes("UNAVAILABLE")) {
-      errorBox.textContent = "Google server par is waqt bohot load hai. Bara-e-meherbani 2-3 minutes baad dobara koshish karein.";
+  } catch (err) {
+    if (err.message.includes("429") || err.message === "429_RATE_LIMIT") {
+      errorBox.innerHTML = "⚠️ <b>Hamaray Free AI server ki limit khatam ho chuki hai!</b><br>Apne Google Console par limits check karein ya 1 minute ke baad dobara submit karein (Google 1 minute mein sirf 5 requests allow karta hai).";
+    } else if (err.message.includes("504") || err.message === "504_TIMEOUT") {
+      errorBox.textContent = "Server Timeout (504): Report analysis bohot slow chal rahi hai. Koshish karein ke direct manual tools use karein ya dobara submit dabaein.";
     } else {
-      errorBox.textContent = e.message;
+      errorBox.textContent = err.message;
     }
     errorBox.classList.remove("hidden");
   } finally {
@@ -248,7 +277,8 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
 // ---------------------------------------------------------
 // Option 2: Manual submit
 // ---------------------------------------------------------
-document.getElementById("submitManualBtn").addEventListener("click", async () => {
+document.getElementById("submitManualBtn").addEventListener("click", async (e) => {
+  const btn = e.target;
   const rate = document.getElementById("rateManual").value || 35;
   const loading = document.getElementById("manualLoading");
   const errorBox = document.getElementById("manualError");
@@ -265,6 +295,7 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
   }
   
   loading.classList.remove("hidden");
+  setButtonCooldown(btn, 12000); // 12 seconds break
   
   try {
     const res = await fetchWithRetry(`${window.API_BASE_URL}/api/analyze-manual`, {
@@ -274,11 +305,15 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
     });
     
     if (!res) {
-      throw new Error("AI models par load ki wajah se timeout ho gaya hai.");
+      throw new Error("AI models par load ki wajah se timeout ho gaya.");
     }
     
     if (res.status === 504) {
       throw new Error("504_TIMEOUT");
+    }
+    
+    if (res.status === 429) {
+      throw new Error("429_RATE_LIMIT");
     }
     
     if (!res.ok) {
@@ -294,13 +329,13 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
     manualChartInstance = renderChart("manualChart", data.breakdown, manualChartInstance);
     renderSummary(document.getElementById("manualSummary"), data);
     resultArea.classList.remove("hidden");
-  } catch (e) {
-    if (e.message.includes("504") || e.message === "504_TIMEOUT") {
-      errorBox.textContent = "Server Timeout (504 Error): Manual report analysis mein waqt lag raha hai. Dobara submit button press karke try karein.";
-    } else if (e.message.includes("503") || e.message.includes("UNAVAILABLE")) {
-      errorBox.textContent = "Google server par is waqt bohot load hai. Bara-e-meherbani 1-2 minutes baad dobara koshish karein.";
+  } catch (err) {
+    if (err.message.includes("429") || err.message === "429_RATE_LIMIT") {
+      errorBox.innerHTML = "⚠️ <b>Free API Limit Exhausted (429 Error):</b><br>Google Gemini 1 minute mein 5 requests se zyada allow nahi karta. Bara-e-meherbani 30 se 60 seconds intezar kar ke dobara try karein.";
+    } else if (err.message.includes("504") || err.message === "504_TIMEOUT") {
+      errorBox.textContent = "Server Timeout (504): AI response ready nahi kar paya. Thoda sa waqt le kar dubara try karein.";
     } else {
-      errorBox.textContent = e.message;
+      errorBox.textContent = err.message;
     }
     errorBox.classList.remove("hidden");
   } finally {
