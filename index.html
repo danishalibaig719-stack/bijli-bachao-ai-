@@ -1,101 +1,83 @@
 <!DOCTYPE html>
 <html lang="ur-PK">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
-<title>Bijli Bachao AI</title>
-<meta name="description" content="Apne bijli ke bill ko AI se kam karein - apne appliances ke hisaab se personalized tips paayein">
-<meta name="theme-color" content="#1a7a4c">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+  <title>Bijli Bachao AI</title>
+  <meta name="description" content="Apne bijli ke bill ko AI se kam karein - apne appliances ke hisaab se personalized tips paayein">
+  <meta name="theme-color" content="#1a7a4c">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <header class="topbar">
+    <div class="brand">⚡ Bijli Bachao AI</div>
+    <div class="tagline">Apne ghar ke hisaab se bijli ka bill kam karein</div>
+  </header>
+  
+  <main class="container">
+    <script>
+      window.API_BASE_URL = "";
+    </script>
+    
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="tab-bill">📄 Sirf Bill Upload Karein</button>
+      <button class="tab-btn" data-tab="tab-manual">🏠 Manual Appliance Entry</button>
+    </div>
+    
+    <section id="tab-bill" class="tab-panel active">
+      <p class="hint">Sirf apne bijli ke bill ki photo upload karein — AI khud units nikal kar andazan report banayega.</p>
+      <label class="field-label">Bill Ki Image</label>
+      <input type="file" id="billImageInput" accept="image/*">
+      <label class="field-label">Rs per Unit (average rate)</label>
+      <input type="number" id="rateBill" value="35">
+      <button id="submitBillBtn" class="primary-btn">Automatic Report Banao</button>
+      
+      <div id="billResultArea" class="result-area hidden">
+        <canvas id="billChart" height="220"></canvas>
+        <div id="billSummary" class="summary-box"></div>
+      </div>
+      <div id="billLoading" class="loading hidden">Report ban rahi hai, thoda intezar karein...</div>
+      <div id="billError" class="error-box hidden"></div>
+    </section>
+    
+    <section id="tab-manual" class="tab-panel">
+      <p class="hint">Apne ghar ke appliances ki tadad aur roz ke ghante bharein — report bilkul exact banegi.</p>
+      <label class="field-label">Rs per Unit (average rate)</label>
+      <input type="number" id="rateManual" value="35">
+      <table class="appliance-table" id="applianceTable">
+        <thead>
+          <tr>
+            <th>Appliance</th>
+            <th>Watt</th>
+            <th>Tadad</th>
+            <th>Ghantay/Din</th>
+          </tr>
+        </thead>
+        <tbody id="applianceTableBody"></tbody>
+      </table>
+      <button id="addRowBtn" class="secondary-btn">+ Appliance Add Karein</button>
+      <button id="submitManualBtn" class="primary-btn">Mera Exact Plan Banao</button>
+      
+      <div id="manualResultArea" class="result-area hidden">
+        <canvas id="manualChart" height="220"></canvas>
+        <div id="manualSummary" class="summary-box"></div>
+      </div>
+      <div id="manualLoading" class="loading hidden">Report ban rahi hai, thoda intezar karein...</div>
+      <div id="manualError" class="error-box hidden"></div>
+    </section>
+  </main>
+  
+  <footer class="footer">Made with ⚡ in Pakistan</footer>
 
-<header class="topbar">
-  <div class="brand">⚡ Bijli Bachao AI</div>
-  <div class="tagline">Apne ghar ke hisaab se bijli ka bill kam karein</div>
-</header>
-
-<main class="container">
-
-  <!-- Backend is on the SAME Vercel deployment (api/index.py), so no separate URL needed -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
   <script>
-    window.API_BASE_URL = "";
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js');
+    }
   </script>
-
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="tab-bill">📄 Sirf Bill Upload Karein</button>
-    <button class="tab-btn" data-tab="tab-manual">🏠 Manual Appliance Entry</button>
-  </div>
-
-  <!-- OPTION 1: Bill upload only -->
-  <section id="tab-bill" class="tab-panel active">
-    <p class="hint">Sirf apne bijli ke bill ki photo upload karein — AI khud units nikal kar andazan report banayega.</p>
-
-    <label class="field-label">Bill Ki Image</label>
-    <input type="file" id="billImageInput" accept="image/*">
-
-    <!-- Visual confirmation that a file was actually selected -->
-    <div id="billPreview" class="file-preview hidden">
-      <img id="billPreviewImg" alt="Selected bill preview">
-      <span id="billFileName"></span>
-    </div>
-
-    <label class="field-label">Rs per Unit (average rate)</label>
-    <input type="number" id="rateBill" value="35">
-
-    <button id="submitBillBtn" class="primary-btn">Automatic Report Banao</button>
-
-    <div id="billResultArea" class="result-area hidden">
-      <canvas id="billChart" height="220"></canvas>
-      <div id="billSummary" class="summary-box"></div>
-    </div>
-    <div id="billLoading" class="loading hidden">Report ban rahi hai, thoda intezar karein...</div>
-    <div id="billError" class="error-box hidden"></div>
-  </section>
-
-  <!-- OPTION 2: Manual entry -->
-  <section id="tab-manual" class="tab-panel">
-    <p class="hint">Apne ghar ke appliances ki tadad aur roz ke ghante bharein — report bilkul exact banegi.</p>
-
-    <label class="field-label">Rs per Unit (average rate)</label>
-    <input type="number" id="rateManual" value="35">
-
-    <table class="appliance-table" id="applianceTable">
-      <thead>
-        <tr>
-          <th>Appliance</th>
-          <th>Watt</th>
-          <th>Tadad</th>
-          <th>Ghantay/Din</th>
-        </tr>
-      </thead>
-      <tbody id="applianceTableBody"></tbody>
-    </table>
-    <button id="addRowBtn" class="secondary-btn">+ Appliance Add Karein</button>
-
-    <button id="submitManualBtn" class="primary-btn">Mera Exact Plan Banao</button>
-
-    <div id="manualResultArea" class="result-area hidden">
-      <canvas id="manualChart" height="220"></canvas>
-      <div id="manualSummary" class="summary-box"></div>
-    </div>
-    <div id="manualLoading" class="loading hidden">Report ban rahi hai, thoda intezar karein...</div>
-    <div id="manualError" class="error-box hidden"></div>
-  </section>
-
-</main>
-
-<footer class="footer">Made with ⚡ in Pakistan</footer>
-
-<script src="app.js"></script>
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('service-worker.js');
-  }
-</script>
 </body>
 </html>
