@@ -1,5 +1,5 @@
 // ---------------------------------------------------------
-// Tabs
+// Tabs Logic
 // ---------------------------------------------------------
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -58,20 +58,46 @@ function collectAppliances() {
 }
 
 // ---------------------------------------------------------
+// Helper: Fetch with retry on 503 error
+// ---------------------------------------------------------
+async function fetchWithRetry(url, options, retries = 3, delay = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.status === 503) {
+        throw new Error("503_SERVICE_UNAVAILABLE");
+      }
+      return response;
+    } catch (err) {
+      if (err.message === "503_SERVICE_UNAVAILABLE" && i < retries - 1) {
+        console.warn(`Gemini API busy (503). Retrying ${i + 1}/${retries}...`);
+        await new Promise(res => setTimeout(res, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+// ---------------------------------------------------------
 // Chart rendering helper
 // ---------------------------------------------------------
 let billChartInstance = null;
 let manualChartInstance = null;
 
 function renderChart(canvasId, breakdown, existingInstance) {
+  if (typeof Chart === "undefined") {
+    console.error("Chart library loaded nahi ho saki.");
+    return null;
+  }
   if (existingInstance) existingInstance.destroy();
-
+  
   const sorted = [...breakdown].sort((a, b) => b.current_monthly_units - a.current_monthly_units);
   const labels = sorted.map(i => i.appliance);
   const values = sorted.map(i => i.current_monthly_units);
   const maxVal = Math.max(...values, 1);
-
   const ctx = document.getElementById(canvasId).getContext("2d");
+  
   return new Chart(ctx, {
     type: "bar",
     data: {
@@ -116,46 +142,7 @@ function renderSummary(container, data) {
 }
 
 // ---------------------------------------------------------
-// File selection feedback (Option 1)
-// Shows filename + thumbnail the moment a file is picked, so the
-// user always sees confirmation that the selection actually registered.
-// ---------------------------------------------------------
-const billImageInput = document.getElementById("billImageInput");
-const billPreview = document.getElementById("billPreview");
-const billPreviewImg = document.getElementById("billPreviewImg");
-const billFileName = document.getElementById("billFileName");
-
-billImageInput.addEventListener("change", () => {
-  const errorBox = document.getElementById("billError");
-  errorBox.classList.add("hidden");
-
-  if (!billImageInput.files.length) {
-    billPreview.classList.add("hidden");
-    return;
-  }
-
-  const file = billImageInput.files[0];
-
-  if (!file.type.startsWith("image/")) {
-    errorBox.textContent = "Sirf image file select karein (JPG/PNG).";
-    errorBox.classList.remove("hidden");
-    billImageInput.value = "";
-    billPreview.classList.add("hidden");
-    return;
-  }
-
-  billFileName.textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    billPreviewImg.src = e.target.result;
-    billPreview.classList.remove("hidden");
-  };
-  reader.readAsDataURL(file);
-});
-
-// ---------------------------------------------------------
-// Image compression helper — resizes/compresses before upload
-// so large phone-camera photos don't hit Vercel's ~4.5MB request limit
+// Image compression helper
 // ---------------------------------------------------------
 function compressImage(file, maxWidth = 1400, quality = 0.75) {
   return new Promise((resolve, reject) => {
@@ -191,32 +178,6 @@ function compressImage(file, maxWidth = 1400, quality = 0.75) {
 }
 
 // ---------------------------------------------------------
-// Fetch with retry — handles Gemini/Vercel 503 (temporary overload)
-// by retrying automatically before showing an error to the user.
-// ---------------------------------------------------------
-async function fetchWithRetry(url, options, retries = 2, delayMs = 2500) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(url, options);
-    if (res.status !== 503 || attempt === retries) return res;
-    await new Promise(r => setTimeout(r, delayMs));
-  }
-}
-
-async function parseErrorResponse(res) {
-  if (res.status === 503) {
-    return "Server filhal busy hai (AI provider par zyada load hai). Meherbani karke 30-60 second baad dobara try karein.";
-  }
-  let message = `Server error (status ${res.status}).`;
-  try {
-    const err = await res.json();
-    message = err.detail || message;
-  } catch (_) {
-    // Response wasn't JSON (e.g. an HTML error page) — keep the status-based message
-  }
-  return message;
-}
-
-// ---------------------------------------------------------
 // Option 1: Bill upload submit
 // ---------------------------------------------------------
 document.getElementById("submitBillBtn").addEventListener("click", async () => {
@@ -225,41 +186,53 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
   const loading = document.getElementById("billLoading");
   const errorBox = document.getElementById("billError");
   const resultArea = document.getElementById("billResultArea");
-
+  
   errorBox.classList.add("hidden");
   resultArea.classList.add("hidden");
-
+  
   if (!fileInput.files.length) {
     errorBox.textContent = "Pehle bill ki image upload karein.";
     errorBox.classList.remove("hidden");
     return;
   }
-
+  
   loading.classList.remove("hidden");
-
+  
   try {
-    // Compress image first so large phone photos don't hit Vercel's request size limit
     const compressedFile = await compressImage(fileInput.files[0]);
-
     const formData = new FormData();
     formData.append("file", compressedFile);
     formData.append("rate_per_unit", rate);
-
+    
+    // Using retry logic for Google Server Load issues
     const res = await fetchWithRetry(`${window.API_BASE_URL}/api/analyze-bill`, {
       method: "POST",
       body: formData
     });
-
-    if (!res.ok) {
-      throw new Error(await parseErrorResponse(res));
+    
+    if (!res) {
+      throw new Error("AI models par bohot load hai. Thodi der baad dubara koshish karein (503).");
     }
-
+    
+    if (!res.ok) {
+      let message = `Server error (status ${res.status}).`;
+      try {
+        const err = await res.json();
+        message = err.detail || message;
+      } catch (_) {}
+      throw new Error(message);
+    }
+    
     const data = await res.json();
     billChartInstance = renderChart("billChart", data.breakdown, billChartInstance);
     renderSummary(document.getElementById("billSummary"), data);
     resultArea.classList.remove("hidden");
   } catch (e) {
-    errorBox.textContent = e.message;
+    if (e.message.includes("503") || e.message.includes("UNAVAILABLE")) {
+      errorBox.textContent = "Google server par is waqt bohot load hai aur demand high hai. Bara-e-meherbani 2-3 minutes baad dobara koshish karein.";
+    } else {
+      errorBox.textContent = e.message;
+    }
     errorBox.classList.remove("hidden");
   } finally {
     loading.classList.add("hidden");
@@ -274,36 +247,49 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
   const loading = document.getElementById("manualLoading");
   const errorBox = document.getElementById("manualError");
   const resultArea = document.getElementById("manualResultArea");
-
+  
   errorBox.classList.add("hidden");
   resultArea.classList.add("hidden");
-
+  
   const appliances = collectAppliances();
   if (!appliances.length) {
     errorBox.textContent = "Kam az kam ek appliance ki tadad aur ghante bharein.";
     errorBox.classList.remove("hidden");
     return;
   }
-
+  
   loading.classList.remove("hidden");
-
+  
   try {
     const res = await fetchWithRetry(`${window.API_BASE_URL}/api/analyze-manual`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rate_per_unit: parseFloat(rate), appliances })
     });
-
-    if (!res.ok) {
-      throw new Error(await parseErrorResponse(res));
+    
+    if (!res) {
+      throw new Error("AI models par bohot load hai. Thodi der baad dubara koshish karein (503).");
     }
-
+    
+    if (!res.ok) {
+      let message = `Server error (status ${res.status}).`;
+      try {
+        const err = await res.json();
+        message = err.detail || message;
+      } catch (_) {}
+      throw new Error(message);
+    }
+    
     const data = await res.json();
     manualChartInstance = renderChart("manualChart", data.breakdown, manualChartInstance);
     renderSummary(document.getElementById("manualSummary"), data);
     resultArea.classList.remove("hidden");
   } catch (e) {
-    errorBox.textContent = e.message;
+    if (e.message.includes("503") || e.message.includes("UNAVAILABLE")) {
+      errorBox.textContent = "Google server par is waqt bohot load hai. Bara-e-meherbani 1-2 minutes baad dobara koshish karein.";
+    } else {
+      errorBox.textContent = e.message;
+    }
     errorBox.classList.remove("hidden");
   } finally {
     loading.classList.add("hidden");
