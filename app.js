@@ -60,7 +60,7 @@ function collectAppliances() {
 // ---------------------------------------------------------
 // Helper: Fetch with retry on 503 error
 // ---------------------------------------------------------
-async function fetchWithRetry(url, options, retries = 3, delay = 2000) {
+async function fetchWithRetry(url, options, retries = 3, delay = 2500) {
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
@@ -144,7 +144,7 @@ function renderSummary(container, data) {
 // ---------------------------------------------------------
 // Image compression helper
 // ---------------------------------------------------------
-function compressImage(file, maxWidth = 1400, quality = 0.75) {
+function compressImage(file, maxWidth = 1000, quality = 0.65) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -199,19 +199,23 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
   loading.classList.remove("hidden");
   
   try {
+    // Quality ko thora aur compress kiya taake upload speed barh jaye
     const compressedFile = await compressImage(fileInput.files[0]);
     const formData = new FormData();
     formData.append("file", compressedFile);
     formData.append("rate_per_unit", rate);
     
-    // Using retry logic for Google Server Load issues
     const res = await fetchWithRetry(`${window.API_BASE_URL}/api/analyze-bill`, {
       method: "POST",
       body: formData
     });
     
     if (!res) {
-      throw new Error("AI models par bohot load hai. Thodi der baad dubara koshish karein (503).");
+      throw new Error("AI models par load ki wajah se timeout ho gaya hai.");
+    }
+    
+    if (res.status === 504) {
+      throw new Error("504_TIMEOUT");
     }
     
     if (!res.ok) {
@@ -228,8 +232,10 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
     renderSummary(document.getElementById("billSummary"), data);
     resultArea.classList.remove("hidden");
   } catch (e) {
-    if (e.message.includes("503") || e.message.includes("UNAVAILABLE")) {
-      errorBox.textContent = "Google server par is waqt bohot load hai aur demand high hai. Bara-e-meherbani 2-3 minutes baad dobara koshish karein.";
+    if (e.message.includes("504") || e.message === "504_TIMEOUT") {
+      errorBox.textContent = "Server Timeout (504 Error): AI model response dene mein zyada waqt le raha hai. Baraye meherbani thodi der baad dobara koshish karein.";
+    } else if (e.message.includes("503") || e.message.includes("UNAVAILABLE")) {
+      errorBox.textContent = "Google server par is waqt bohot load hai. Bara-e-meherbani 2-3 minutes baad dobara koshish karein.";
     } else {
       errorBox.textContent = e.message;
     }
@@ -268,7 +274,11 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
     });
     
     if (!res) {
-      throw new Error("AI models par bohot load hai. Thodi der baad dubara koshish karein (503).");
+      throw new Error("AI models par load ki wajah se timeout ho gaya hai.");
+    }
+    
+    if (res.status === 504) {
+      throw new Error("504_TIMEOUT");
     }
     
     if (!res.ok) {
@@ -285,7 +295,9 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
     renderSummary(document.getElementById("manualSummary"), data);
     resultArea.classList.remove("hidden");
   } catch (e) {
-    if (e.message.includes("503") || e.message.includes("UNAVAILABLE")) {
+    if (e.message.includes("504") || e.message === "504_TIMEOUT") {
+      errorBox.textContent = "Server Timeout (504 Error): Manual report analysis mein waqt lag raha hai. Dobara submit button press karke try karein.";
+    } else if (e.message.includes("503") || e.message.includes("UNAVAILABLE")) {
       errorBox.textContent = "Google server par is waqt bohot load hai. Bara-e-meherbani 1-2 minutes baad dobara koshish karein.";
     } else {
       errorBox.textContent = e.message;
