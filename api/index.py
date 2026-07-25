@@ -5,6 +5,7 @@ import re
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
+from google.genai import types
 from PIL import Image
 import io
 
@@ -50,47 +51,91 @@ def get_rate_per_unit(total_units: float, consumer_type: str = "protected") -> f
     else:
         return 47.69
 
-# --- IMPROVED: Robust JSON parser ---
+# --- ULTRA ROBUST: JSON parser with multiple fallbacks ---
 def parse_ai_json(response):
     raw_text = response.text.strip()
     
-    # Remove markdown code fences if present
+    # If response is already a string that looks like JSON, try parsing directly
+    try:
+        return json.loads(raw_text)
+    except:
+        pass
+    
+    # Remove markdown code fences
     raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
     raw_text = re.sub(r'\s*```$', '', raw_text)
     
-    # Find the first { and last } to extract only JSON
+    # Find JSON boundaries
     start = raw_text.find('{')
     end = raw_text.rfind('}')
     
     if start == -1 or end == -1:
-        raise ValueError(f"No JSON object found in response. Raw: {raw_text[:200]}")
+        # Try to find anything that looks like JSON
+        match = re.search(r'\{[^{}]*\}', raw_text)
+        if match:
+            json_str = match.group()
+        else:
+            raise ValueError(f"No JSON found. Raw: {raw_text[:300]}")
+    else:
+        json_str = raw_text[start:end+1]
     
-    json_str = raw_text[start:end+1]
+    # Clean common issues
+    json_str = re.sub(r',\s*}', '}', json_str)
+    json_str = re.sub(r',\s*]', ']', json_str)
+    json_str = re.sub(r'\n', ' ', json_str)
+    json_str = re.sub(r'\s+', ' ', json_str)
     
-    # Remove any trailing commas before closing braces (common Gemini issue)
+    # If still has trailing commas in arrays/objects
     json_str = re.sub(r',\s*}', '}', json_str)
     json_str = re.sub(r',\s*]', ']', json_str)
     
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
-        # If still failing, try to fix by removing extra spaces and newlines
-        cleaned = re.sub(r'\s+', ' ', json_str)
+        # One more try: manually fix common issues
+        json_str = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', json_str)
         try:
-            return json.loads(cleaned)
+            return json.loads(json_str)
         except:
-            raise ValueError(f"JSON parse error: {e}\nCleaned: {json_str[:300]}")
+            raise ValueError(f"JSON parse failed: {e}\nCleaned: {json_str[:300]}")
 
-# --- Retry Logic ---
+# --- Retry Logic with JSON mode ---
 async def call_gemini_with_retry(contents, max_retries=3):
     retry_count = 0
     delay = 1
+    
+    # Prepare contents for JSON mode
+    if isinstance(contents, list):
+        # If contents is a list (text + image), handle appropriately
+        prompt_text = contents[0] if contents else ""
+        # For JSON mode with images, we need to use the regular API
+        # and parse the response manually
+        generate_config = types.GenerateContentConfig(
+            temperature=0.1,
+            response_mime_type="application/json"
+        )
+    else:
+        generate_config = types.GenerateContentConfig(
+            temperature=0.1,
+            response_mime_type="application/json"
+        )
+    
     while retry_count < max_retries:
         try:
-            response = client.models.generate_content(
-                model='gemini-flash-latest',
-                contents=contents
-            )
+            if isinstance(contents, list) and len(contents) > 1 and isinstance(contents[1], Image.Image):
+                # Image + text case
+                response = client.models.generate_content(
+                    model='gemini-flash-latest',
+                    contents=contents,
+                    config=generate_config
+                )
+            else:
+                # Text only case
+                response = client.models.generate_content(
+                    model='gemini-flash-latest',
+                    contents=contents,
+                    config=generate_config
+                )
             return response
         except Exception as e:
             error_str = str(e).lower()
@@ -105,7 +150,7 @@ async def call_gemini_with_retry(contents, max_retries=3):
             else:
                 raise Exception(f"AI service mein masla aaya: {e}") from e
 
-# --- Prompts ---
+# --- Prompts (with explicit JSON format examples) ---
 PROMPT_BILL = """
 You are a Pakistani electricity bill analyzer. Look at the bill image and extract:
 
@@ -113,39 +158,35 @@ You are a Pakistani electricity bill analyzer. Look at the bill image and extrac
 2. Consumer Category: "protected" or "non-protected" or "lifeline" — determine from bill text if mentioned, otherwise default to "non-protected"
 3. Bill Type: "WAPDA" or "K-Electric" or "Other"
 
-Return STRICT JSON ONLY, no extra text, no markdown:
+Return ONLY valid JSON with no additional text, no markdown, no explanations. The JSON must be exactly in this format:
 
-{
-  "total_units": 200,
-  "consumer_category": "non-protected",
-  "bill_type": "WAPDA"
-}
+{"total_units": 200, "consumer_category": "non-protected", "bill_type": "WAPDA"}
 """
 
 PROMPT_MANUAL = """
-You are a friendly Pakistani electrical energy auditor. Respond STRICTLY in Roman Urdu.
+You are a friendly Pakistani electrical energy auditor. Respond in Roman Urdu.
 
 You are given the user's ACTUAL per-appliance monthly consumption breakdown.
 Appliance data (JSON): {appliance_data}
 Rate per unit (Rs): {rate}
 
-Return STRICT JSON ONLY, no markdown, no extra text:
+Return ONLY valid JSON with no additional text, no markdown, no explanations. The JSON must be exactly in this format:
 
-{
+{{
   "risk_level": "Darmiyana",
   "estimated_monthly_saving_units": 45,
   "estimated_monthly_saving_rs": 1500,
-  "overall_summary_roman_urdu": "Aap ka sab se zyada bijli AC aur fridge use kar rahay hain...",
+  "overall_summary_roman_urdu": "Aap ka sab se zyada bijli AC aur fridge use kar rahay hain.",
   "appliance_insights": [
-    {
+    {{
       "appliance": "AC (1.5 Ton Split)",
       "current_monthly_units": 150,
       "suggested_daily_hours": 6,
       "monthly_unit_saving": 30,
       "tip_roman_urdu": "AC ko 24°C par set karein aur timer use karein"
-    }
+    }}
   ]
-}
+}}
 """
 
 # --- Endpoints ---
@@ -163,7 +204,7 @@ async def analyze_bill(file: UploadFile = File(...)):
         image_data = await file.read()
         img = Image.open(io.BytesIO(image_data))
 
-        # Step 1: Extract bill info
+        # Step 1: Extract bill info with JSON mode
         response = await call_gemini_with_retry([PROMPT_BILL, img])
         bill_data = parse_ai_json(response)
 
