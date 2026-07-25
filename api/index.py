@@ -4,6 +4,7 @@ import asyncio
 import re
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -11,23 +12,48 @@ import io
 
 app = FastAPI()
 
+# ============================================================
+# CORS - More permissive for Vercel
+# ============================================================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,
 )
 
+# ============================================================
+# Security Headers Middleware
+# ============================================================
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# ============================================================
+# Gemini Client
+# ============================================================
 api_key = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key) if api_key else None
 
 if not client:
     print("WARNING: GEMINI_API_KEY not found in environment variables!")
 
-# --- NEPRA Tariff Slabs 2026 (Domestic) ---
+# ============================================================
+# NEPRA Tariff Slabs 2026
+# ============================================================
 def get_rate_per_unit(total_units: float, consumer_type: str = "protected", bill_type: str = "WAPDA") -> float:
-    # K-Electric ke rates thore different hain
     if bill_type.upper() == "K-ELECTRIC":
         if consumer_type.lower() in ["protected", "lifeline"]:
             if total_units <= 50:
@@ -53,7 +79,6 @@ def get_rate_per_unit(total_units: float, consumer_type: str = "protected", bill
         else:
             return 49.00
     else:
-        # WAPDA / Other
         if consumer_type.lower() in ["protected", "lifeline"]:
             if total_units <= 50:
                 return 3.95
@@ -78,7 +103,9 @@ def get_rate_per_unit(total_units: float, consumer_type: str = "protected", bill
         else:
             return 47.69
 
-# --- JSON Parser ---
+# ============================================================
+# JSON Parser
+# ============================================================
 def parse_ai_json(response):
     raw_text = response.text.strip()
     
@@ -116,9 +143,11 @@ def parse_ai_json(response):
         try:
             return json.loads(json_str)
         except:
-            raise ValueError(f"JSON parse failed: {e}\nCleaned: {json_str[:300]}")
+            raise ValueError(f"JSON parse failed: {e}")
 
-# --- Retry Logic ---
+# ============================================================
+# Retry Logic
+# ============================================================
 async def call_gemini_with_retry(contents, max_retries=3):
     retry_count = 0
     delay = 1
@@ -156,7 +185,9 @@ async def call_gemini_with_retry(contents, max_retries=3):
             else:
                 raise Exception(f"AI service mein masla aaya: {e}") from e
 
-# --- Prompts with Language Support ---
+# ============================================================
+# Prompts
+# ============================================================
 PROMPT_BILL = """
 You are a Pakistani electricity bill analyzer. Look at the bill image and extract:
 
@@ -168,7 +199,6 @@ Return ONLY valid JSON:
 {"total_units": 200, "consumer_category": "non-protected", "bill_type": "WAPDA"}
 """
 
-# Language-specific prompts
 PROMPT_MANUAL_ROMAN_URDU = """
 You are a friendly Pakistani electrical energy auditor. Respond in Roman Urdu (Urdu written in English letters).
 
@@ -249,8 +279,34 @@ def get_prompt(language: str):
     else:
         return PROMPT_MANUAL_ROMAN_URDU
 
-# --- Endpoints ---
+# ============================================================
+# OPTIONS endpoint for CORS preflight
+# ============================================================
+@app.options("/api/analyze-bill")
+async def options_analyze_bill():
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Accept",
+        }
+    )
 
+@app.options("/api/analyze-manual")
+async def options_analyze_manual():
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Accept",
+        }
+    )
+
+# ============================================================
+# API Endpoints
+# ============================================================
 @app.get("/api")
 async def health_check():
     return {"status": "ok", "message": "Bijli Bachao AI backend is running"}
@@ -258,7 +314,8 @@ async def health_check():
 @app.post("/api/analyze-bill")
 async def analyze_bill(
     file: UploadFile = File(...),
-    language: str = Form("roman_urdu")
+    language: str = Form("roman_urdu"),
+    bill_type: str = Form("auto")
 ):
     if not client:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing.")
@@ -272,12 +329,16 @@ async def analyze_bill(
 
         total_units = bill_data.get("total_units", 0)
         consumer_category = bill_data.get("consumer_category", "non-protected")
-        bill_type = bill_data.get("bill_type", "Other")
+        detected_bill_type = bill_data.get("bill_type", "Other")
+        
+        # Override with manual selection if not "auto"
+        if bill_type != "auto" and bill_type:
+            detected_bill_type = bill_type
 
         if total_units <= 0:
             raise Exception("Bill se units nahi nikal paaye.")
 
-        rate_per_unit = get_rate_per_unit(total_units, consumer_category, bill_type)
+        rate_per_unit = get_rate_per_unit(total_units, consumer_category, detected_bill_type)
 
         appliance_data = [
             {"appliance": "AC (Estimated)", "current_monthly_units": round(total_units * 0.25, 1)},
@@ -300,18 +361,18 @@ async def analyze_bill(
             for i in data.get("appliance_insights", [])
         ]
 
-        return {
+        return JSONResponse(content={
             "breakdown": breakdown,
             "total_units": total_units,
             "consumer_category": consumer_category,
-            "bill_type": bill_type,
+            "bill_type": detected_bill_type,
             "rate_per_unit": rate_per_unit,
             "risk_level": data.get("risk_level"),
             "estimated_monthly_saving_units": data.get("estimated_monthly_saving_units"),
             "estimated_monthly_saving_rs": data.get("estimated_monthly_saving_rs"),
             "overall_summary": data.get("overall_summary"),
             "appliance_insights": data.get("appliance_insights", [])
-        }
+        })
 
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -356,7 +417,7 @@ async def analyze_manual(request: dict):
         response = await call_gemini_with_retry([prompt])
         data = parse_ai_json(response)
 
-        return {
+        return JSONResponse(content={
             "breakdown": breakdown,
             "total_units": total_units,
             "rate_per_unit": rate,
@@ -365,7 +426,7 @@ async def analyze_manual(request: dict):
             "estimated_monthly_saving_rs": data.get("estimated_monthly_saving_rs"),
             "overall_summary": data.get("overall_summary"),
             "appliance_insights": data.get("appliance_insights", [])
-        }
+        })
 
     except Exception as e:
         print(f"Error: {str(e)}")
