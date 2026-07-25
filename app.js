@@ -1,50 +1,50 @@
-// ---------------------------------------------------------
-// Language Selector
-// ---------------------------------------------------------
+// ============================================================
+// LANGUAGE SELECTOR
+// ============================================================
 const languageSelect = document.getElementById("languageSelect");
 
 function getSelectedLanguage() {
     return languageSelect.value;
 }
 
-// ---------------------------------------------------------
-// Tabs
-// ---------------------------------------------------------
+// ============================================================
+// TABS
+// ============================================================
 document.querySelectorAll(".tab-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById(btn.dataset.tab).classList.add("active");
-  });
+    btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+    });
 });
 
-// ---------------------------------------------------------
-// Appliance table (Option 2)
-// ---------------------------------------------------------
+// ============================================================
+// APPLIANCE TABLE
+// ============================================================
 const DEFAULT_APPLIANCES = [
-  ["AC (1.5 Ton Split)", 1500, 0, 0],
-  ["Fridge", 150, 1, 24],
-  ["Ceiling Fan", 75, 3, 10],
-  ["LED Bulb/Tubelight", 15, 6, 8],
-  ["Water Motor/Pump", 750, 1, 1],
-  ["Washing Machine", 500, 1, 1],
-  ["Electric Iron", 1000, 1, 0.5],
-  ["Electric Geyser", 2000, 1, 0],
-  ["LED TV", 100, 1, 4],
+    ["AC (1.5 Ton Split)", 1500, 0, 0],
+    ["Fridge", 150, 1, 24],
+    ["Ceiling Fan", 75, 3, 10],
+    ["LED Bulb/Tubelight", 15, 6, 8],
+    ["Water Motor/Pump", 750, 1, 1],
+    ["Washing Machine", 500, 1, 1],
+    ["Electric Iron", 1000, 1, 0.5],
+    ["Electric Geyser", 2000, 1, 0],
+    ["LED TV", 100, 1, 4],
 ];
 
 const tableBody = document.getElementById("applianceTableBody");
 
 function addRow(name = "", watt = "", qty = "", hours = "") {
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td><input type="text" class="ap-name" value="${name}"></td>
-    <td><input type="number" class="ap-watt" value="${watt}"></td>
-    <td><input type="number" class="ap-qty" value="${qty}"></td>
-    <td><input type="number" step="0.5" class="ap-hours" value="${hours}"></td>
-  `;
-  tableBody.appendChild(tr);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+        <td><input type="text" class="ap-name" value="${name}" placeholder="Name"></td>
+        <td><input type="number" class="ap-watt" value="${watt}" placeholder="W"></td>
+        <td><input type="number" class="ap-qty" value="${qty}" placeholder="Qty"></td>
+        <td><input type="number" step="0.5" class="ap-hours" value="${hours}" placeholder="Hrs"></td>
+    `;
+    tableBody.appendChild(tr);
 }
 
 DEFAULT_APPLIANCES.forEach(row => addRow(...row));
@@ -52,242 +52,285 @@ DEFAULT_APPLIANCES.forEach(row => addRow(...row));
 document.getElementById("addRowBtn").addEventListener("click", () => addRow());
 
 function collectAppliances() {
-  const rows = tableBody.querySelectorAll("tr");
-  const appliances = [];
-  rows.forEach(row => {
-    const name = row.querySelector(".ap-name").value.trim();
-    const watt = parseFloat(row.querySelector(".ap-watt").value) || 0;
-    const qty = parseFloat(row.querySelector(".ap-qty").value) || 0;
-    const hours = parseFloat(row.querySelector(".ap-hours").value) || 0;
-    if (name && watt > 0 && qty > 0 && hours > 0) {
-      appliances.push({ name, watt, qty, hours });
-    }
-  });
-  return appliances;
+    const rows = tableBody.querySelectorAll("tr");
+    const appliances = [];
+    rows.forEach(row => {
+        const name = row.querySelector(".ap-name").value.trim();
+        const watt = parseFloat(row.querySelector(".ap-watt").value) || 0;
+        const qty = parseFloat(row.querySelector(".ap-qty").value) || 0;
+        const hours = parseFloat(row.querySelector(".ap-hours").value) || 0;
+        if (name && watt > 0 && qty > 0 && hours > 0) {
+            appliances.push({ name, watt, qty, hours });
+        }
+    });
+    return appliances;
 }
 
-// ---------------------------------------------------------
-// Chart rendering
-// ---------------------------------------------------------
+// ============================================================
+// CHARTS
+// ============================================================
 let billChartInstance = null;
 let manualChartInstance = null;
 
 function renderChart(canvasId, breakdown, existingInstance) {
-  if (existingInstance) existingInstance.destroy();
+    if (existingInstance) existingInstance.destroy();
 
-  const sorted = [...breakdown].sort((a, b) => b.current_monthly_units - a.current_monthly_units);
-  const labels = sorted.map(i => i.appliance);
-  const values = sorted.map(i => i.current_monthly_units);
-  const maxVal = Math.max(...values, 1);
+    const sorted = [...breakdown].sort((a, b) => b.current_monthly_units - a.current_monthly_units);
+    const labels = sorted.map(i => i.appliance);
+    const values = sorted.map(i => i.current_monthly_units);
+    const maxVal = Math.max(...values, 1);
 
-  const ctx = document.getElementById(canvasId).getContext("2d");
-  return new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{
-        label: "Units / Mahina",
-        data: values,
-        backgroundColor: values.map(v => v === maxVal ? "#e74c3c" : "#2980b9"),
-        borderRadius: 6,
-      }]
-    },
-    options: {
-      indexAxis: "y",
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true } }
-    }
-  });
-}
-
-// ---------------------------------------------------------
-// Summary rendering with language support
-// ---------------------------------------------------------
-function renderSummary(container, data) {
-  let html = "";
-  
-  if (data.total_units !== undefined) {
-    html += `<div><b>Total Units:</b> ${data.total_units}</div>`;
-  }
-  if (data.rate_per_unit !== undefined) {
-    html += `<div><b>Rate per Unit:</b> Rs ${data.rate_per_unit}</div>`;
-  }
-  if (data.bill_type) {
-    html += `<div><b>Bill Type:</b> ${data.bill_type}</div>`;
-  }
-  if (data.consumer_category) {
-    html += `<div><b>Consumer Category:</b> ${data.consumer_category}</div>`;
-  }
-  
-  html += `<div class="risk-badge">Risk: ${data.risk_level || "-"}</div>`;
-  html += `<div class="saving-line">Estimated Monthly Saving: ${data.estimated_monthly_saving_units || "-"} Units (~Rs ${data.estimated_monthly_saving_rs || "-"})</div>`;
-  html += `<p>${data.overall_summary || ""}</p>`;
-  html += `<h3>Appliance-Wise Steps</h3>`;
-  
-  (data.appliance_insights || []).forEach(item => {
-    html += `<div class="appliance-tip">
-      <b>${item.appliance}</b>: ${item.current_monthly_units} units/month
-      → ${item.suggested_daily_hours} hours/day
-      → <b>${item.monthly_unit_saving} units saved</b>.<br>
-      ${item.tip || ""}
-    </div>`;
-  });
-  
-  container.innerHTML = html;
-}
-
-// ---------------------------------------------------------
-// Image compression
-// ---------------------------------------------------------
-function compressImage(file, maxWidth = 1400, quality = 0.75) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
+    const ctx = document.getElementById(canvasId).getContext("2d");
+    return new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [{
+                label: "Units / Month",
+                data: values,
+                backgroundColor: values.map(v => v === maxVal ? "#0d6efd" : "#6c8cff"),
+                borderRadius: 6,
+                barPercentage: 0.7,
+            }]
+        },
+        options: {
+            indexAxis: "y",
+            responsive: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.parsed.x + ' units/month';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    grid: { color: '#e9edf2' }
+                },
+                y: {
+                    grid: { display: false }
+                }
+            }
         }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) return reject(new Error("Image compress nahi ho saki."));
-            resolve(new File([blob], "bill.jpg", { type: "image/jpeg" }));
-          },
-          "image/jpeg",
-          quality
-        );
-      };
-      img.onerror = () => reject(new Error("Image load nahi ho saki."));
-      img.src = e.target.result;
-    };
-    reader.onerror = () => reject(new Error("File read nahi ho saka."));
-    reader.readAsDataURL(file);
-  });
+    });
 }
 
-// ---------------------------------------------------------
-// Option 1: Bill upload submit
-// ---------------------------------------------------------
-document.getElementById("submitBillBtn").addEventListener("click", async () => {
-  const fileInput = document.getElementById("billImageInput");
-  const loading = document.getElementById("billLoading");
-  const errorBox = document.getElementById("billError");
-  const resultArea = document.getElementById("billResultArea");
-  const rateDisplay = document.getElementById("billRateDisplay");
+// ============================================================
+// SUMMARY RENDERER (with proper risk badge)
+// ============================================================
+function renderSummary(container, data) {
+    let html = "";
 
-  errorBox.classList.add("hidden");
-  resultArea.classList.add("hidden");
+    // Info cards
+    if (data.total_units !== undefined || data.rate_per_unit !== undefined) {
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">`;
+        if (data.total_units !== undefined) {
+            html += `<div style="background:#e8f0fe;padding:10px 14px;border-radius:10px;"><b>📊 Total Units:</b> ${data.total_units}</div>`;
+        }
+        if (data.rate_per_unit !== undefined) {
+            html += `<div style="background:#e8f5e9;padding:10px 14px;border-radius:10px;"><b>💰 Rate:</b> Rs ${data.rate_per_unit}/unit</div>`;
+        }
+        if (data.bill_type) {
+            html += `<div style="background:#fff3cd;padding:10px 14px;border-radius:10px;"><b>🏷️ Bill Type:</b> ${data.bill_type}</div>`;
+        }
+        if (data.consumer_category) {
+            html += `<div style="background:#f3e5f5;padding:10px 14px;border-radius:10px;"><b>👤 Category:</b> ${data.consumer_category}</div>`;
+        }
+        html += `</div>`;
+    }
 
-  if (!fileInput.files.length) {
-    errorBox.textContent = "Pehle bill ki image upload karein.";
-    errorBox.classList.remove("hidden");
-    return;
-  }
+    // Risk Badge
+    const risk = data.risk_level || "-";
+    const riskClass = risk.toLowerCase().includes("kam") ? "Kam" : 
+                     risk.toLowerCase().includes("zyada") ? "Zyada" : "Darmiyana";
+    html += `<div class="risk-badge" data-risk="${riskClass}">⚠️ Risk Level: ${risk}</div>`;
 
-  loading.classList.remove("hidden");
+    // Savings
+    if (data.estimated_monthly_saving_units) {
+        html += `<div class="saving-line">💰 Estimated Monthly Saving: ${data.estimated_monthly_saving_units} Units (~Rs ${data.estimated_monthly_saving_rs || 'N/A'})</div>`;
+    }
 
-  try {
-    const compressedFile = await compressImage(fileInput.files[0]);
-    const formData = new FormData();
-    formData.append("file", compressedFile);
-    formData.append("language", getSelectedLanguage());
+    // Summary
+    if (data.overall_summary) {
+        html += `<p style="margin:12px 0 6px 0;font-size:16px;">${data.overall_summary}</p>`;
+    }
 
-    const res = await fetch(`${window.API_BASE_URL}/api/analyze-bill`, {
-      method: "POST",
-      body: formData
+    // Appliance insights
+    const insights = data.appliance_insights || [];
+    if (insights.length > 0) {
+        html += `<h3>🔧 Appliance-Wise Recommendations</h3>`;
+        insights.forEach(item => {
+            html += `<div class="appliance-tip">
+                <b>${item.appliance}</b><br>
+                Current: ${item.current_monthly_units} units/month → 
+                Suggested: ${item.suggested_daily_hours} hrs/day → 
+                <b>Save ${item.monthly_unit_saving} units/month</b><br>
+                <span style="color:#5a6a7a;font-size:14px;">💡 ${item.tip || ''}</span>
+            </div>`;
+        });
+    }
+
+    container.innerHTML = html;
+}
+
+// ============================================================
+// IMAGE COMPRESSION
+// ============================================================
+function compressImage(file, maxWidth = 1400, quality = 0.75) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > maxWidth) {
+                    height = Math.round((height * maxWidth) / width);
+                    width = maxWidth;
+                }
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob(
+                    (blob) => {
+                        if (!blob) return reject(new Error("Compression failed"));
+                        resolve(new File([blob], "bill.jpg", { type: "image/jpeg" }));
+                    },
+                    "image/jpeg",
+                    quality
+                );
+            };
+            img.onerror = () => reject(new Error("Image load failed"));
+            img.src = e.target.result;
+        };
+        reader.onerror = () => reject(new Error("File read failed"));
+        reader.readAsDataURL(file);
     });
+}
 
-    if (!res.ok) {
-      let message = `Server error (status ${res.status}).`;
-      try {
-        const err = await res.json();
-        message = err.detail || message;
-      } catch (_) {}
-      throw new Error(message);
+// ============================================================
+// OPTION 1: BILL UPLOAD
+// ============================================================
+document.getElementById("submitBillBtn").addEventListener("click", async () => {
+    const fileInput = document.getElementById("billImageInput");
+    const billType = document.getElementById("billTypeSelect").value;
+    const loading = document.getElementById("billLoading");
+    const errorBox = document.getElementById("billError");
+    const resultArea = document.getElementById("billResultArea");
+    const rateDisplay = document.getElementById("billRateDisplay");
+
+    errorBox.classList.add("hidden");
+    resultArea.classList.add("hidden");
+
+    if (!fileInput.files.length) {
+        errorBox.textContent = "❌ Please upload a bill image first.";
+        errorBox.classList.remove("hidden");
+        return;
     }
 
-    const data = await res.json();
-    
-    // Show rate info
-    if (data.rate_per_unit) {
-      rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit | Bill: ${data.bill_type || "Auto"} | Category: ${data.consumer_category || "N/A"}`;
-      rateDisplay.style.display = "block";
+    loading.classList.remove("hidden");
+
+    try {
+        const compressedFile = await compressImage(fileInput.files[0]);
+        const formData = new FormData();
+        formData.append("file", compressedFile);
+        formData.append("language", getSelectedLanguage());
+        formData.append("bill_type", billType);
+
+        const res = await fetch(`${window.API_BASE_URL}/api/analyze-bill`, {
+            method: "POST",
+            body: formData
+        });
+
+        if (!res.ok) {
+            let message = `Server error (${res.status})`;
+            try {
+                const err = await res.json();
+                message = err.detail || message;
+            } catch (_) {}
+            throw new Error(message);
+        }
+
+        const data = await res.json();
+
+        if (data.rate_per_unit) {
+            rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit | ${data.bill_type || 'Auto'} | ${data.consumer_category || 'N/A'}`;
+            rateDisplay.classList.add("active");
+        }
+
+        billChartInstance = renderChart("billChart", data.breakdown, billChartInstance);
+        renderSummary(document.getElementById("billSummary"), data);
+        resultArea.classList.remove("hidden");
+
+    } catch (e) {
+        errorBox.textContent = `❌ ${e.message}`;
+        errorBox.classList.remove("hidden");
+    } finally {
+        loading.classList.add("hidden");
     }
-    
-    billChartInstance = renderChart("billChart", data.breakdown, billChartInstance);
-    renderSummary(document.getElementById("billSummary"), data);
-    resultArea.classList.remove("hidden");
-  } catch (e) {
-    errorBox.textContent = e.message;
-    errorBox.classList.remove("hidden");
-  } finally {
-    loading.classList.add("hidden");
-  }
 });
 
-// ---------------------------------------------------------
-// Option 2: Manual submit
-// ---------------------------------------------------------
+// ============================================================
+// OPTION 2: MANUAL ENTRY
+// ============================================================
 document.getElementById("submitManualBtn").addEventListener("click", async () => {
-  const loading = document.getElementById("manualLoading");
-  const errorBox = document.getElementById("manualError");
-  const resultArea = document.getElementById("manualResultArea");
-  const rateDisplay = document.getElementById("manualRateDisplay");
+    const loading = document.getElementById("manualLoading");
+    const errorBox = document.getElementById("manualError");
+    const resultArea = document.getElementById("manualResultArea");
+    const rateDisplay = document.getElementById("manualRateDisplay");
 
-  errorBox.classList.add("hidden");
-  resultArea.classList.add("hidden");
+    errorBox.classList.add("hidden");
+    resultArea.classList.add("hidden");
 
-  const appliances = collectAppliances();
-  if (!appliances.length) {
-    errorBox.textContent = "Kam az kam ek appliance ki tadad aur ghante bharein.";
-    errorBox.classList.remove("hidden");
-    return;
-  }
-
-  loading.classList.remove("hidden");
-
-  try {
-    const res = await fetch(`${window.API_BASE_URL}/api/analyze-manual`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        rate_per_unit: 35,
-        appliances: appliances,
-        language: getSelectedLanguage()
-      })
-    });
-
-    if (!res.ok) {
-      let message = `Server error (status ${res.status}).`;
-      try {
-        const err = await res.json();
-        message = err.detail || message;
-      } catch (_) {}
-      throw new Error(message);
+    const appliances = collectAppliances();
+    if (!appliances.length) {
+        errorBox.textContent = "❌ Please fill in at least one appliance with qty and hours.";
+        errorBox.classList.remove("hidden");
+        return;
     }
 
-    const data = await res.json();
-    
-    if (data.rate_per_unit) {
-      rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit`;
-      rateDisplay.style.display = "block";
+    loading.classList.remove("hidden");
+
+    try {
+        const res = await fetch(`${window.API_BASE_URL}/api/analyze-manual`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                rate_per_unit: 35,
+                appliances: appliances,
+                language: getSelectedLanguage()
+            })
+        });
+
+        if (!res.ok) {
+            let message = `Server error (${res.status})`;
+            try {
+                const err = await res.json();
+                message = err.detail || message;
+            } catch (_) {}
+            throw new Error(message);
+        }
+
+        const data = await res.json();
+
+        if (data.rate_per_unit) {
+            rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit`;
+            rateDisplay.classList.add("active");
+        }
+
+        manualChartInstance = renderChart("manualChart", data.breakdown, manualChartInstance);
+        renderSummary(document.getElementById("manualSummary"), data);
+        resultArea.classList.remove("hidden");
+
+    } catch (e) {
+        errorBox.textContent = `❌ ${e.message}`;
+        errorBox.classList.remove("hidden");
+    } finally {
+        loading.classList.add("hidden");
     }
-    
-    manualChartInstance = renderChart("manualChart", data.breakdown, manualChartInstance);
-    renderSummary(document.getElementById("manualSummary"), data);
-    resultArea.classList.remove("hidden");
-  } catch (e) {
-    errorBox.textContent = e.message;
-    errorBox.classList.remove("hidden");
-  } finally {
-    loading.classList.add("hidden");
-  }
 });
