@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import re
+import time
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,11 +10,12 @@ from google import genai
 from google.genai import types
 from PIL import Image
 import io
+from functools import lru_cache
 
 app = FastAPI()
 
 # ============================================================
-# CORS - More permissive for Vercel
+# CORS
 # ============================================================
 app.add_middleware(
     CORSMiddleware,
@@ -24,22 +26,6 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=600,
 )
-
-# ============================================================
-# Security Headers Middleware
-# ============================================================
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
-
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept"
-        return response
-
-app.add_middleware(SecurityHeadersMiddleware)
 
 # ============================================================
 # Gemini Client
@@ -104,6 +90,13 @@ def get_rate_per_unit(total_units: float, consumer_type: str = "protected", bill
             return 47.69
 
 # ============================================================
+# Simple Cache for rate calculations
+# ============================================================
+@lru_cache(maxsize=128)
+def get_cached_rate(total_units: float, consumer_type: str, bill_type: str) -> float:
+    return get_rate_per_unit(total_units, consumer_type, bill_type)
+
+# ============================================================
 # JSON Parser
 # ============================================================
 def parse_ai_json(response):
@@ -146,11 +139,17 @@ def parse_ai_json(response):
             raise ValueError(f"JSON parse failed: {e}")
 
 # ============================================================
-# Retry Logic
+# SMART RETRY LOGIC with Exponential Backoff
 # ============================================================
-async def call_gemini_with_retry(contents, max_retries=3):
+async def call_gemini_with_retry(contents, max_retries=5, base_delay=1):
+    """
+    Smart retry with exponential backoff:
+    - Retry 5 times (up from 3)
+    - Wait: 1s, 2s, 4s, 8s, 16s between retries
+    - Handles 429 (rate limit) and 503 (server busy)
+    """
     retry_count = 0
-    delay = 1
+    delay = base_delay
     
     generate_config = types.GenerateContentConfig(
         temperature=0.1,
@@ -171,19 +170,34 @@ async def call_gemini_with_retry(contents, max_retries=3):
                     contents=contents,
                     config=generate_config
                 )
+            # Success! Return response
             return response
+            
         except Exception as e:
             error_str = str(e).lower()
-            is_retryable = "503" in error_str or "429" in error_str or "unavailable" in error_str or "rate limit" in error_str
-            if is_retryable:
+            is_retryable = (
+                "503" in error_str or 
+                "429" in error_str or 
+                "unavailable" in error_str or 
+                "rate limit" in error_str or
+                "resource exhausted" in error_str or
+                "busy" in error_str
+            )
+            
+            if is_retryable and retry_count < max_retries - 1:
                 retry_count += 1
-                if retry_count < max_retries:
-                    print(f"Retry {retry_count}/{max_retries}: {e}")
-                    await asyncio.sleep(delay * retry_count)
-                else:
-                    raise Exception("AI service abhi busy hai. 1-2 minute baad dobara try karein.") from e
+                print(f"⚠️ Gemini API error (attempt {retry_count}/{max_retries}): {e}")
+                print(f"⏳ Waiting {delay}s before retry...")
+                await asyncio.sleep(delay)
+                # Exponential backoff: 1, 2, 4, 8, 16 seconds
+                delay *= 2
             else:
-                raise Exception(f"AI service mein masla aaya: {e}") from e
+                # Not retryable OR max retries reached
+                print(f"❌ Gemini API final error: {e}")
+                if retry_count >= max_retries - 1:
+                    raise Exception("AI service abhi busy hai. Thodi der baad dobara try karein (1-2 minute).")
+                else:
+                    raise Exception(f"AI service mein masla aaya: {e}")
 
 # ============================================================
 # Prompts
@@ -331,14 +345,13 @@ async def analyze_bill(
         consumer_category = bill_data.get("consumer_category", "non-protected")
         detected_bill_type = bill_data.get("bill_type", "Other")
         
-        # Override with manual selection if not "auto"
         if bill_type != "auto" and bill_type:
             detected_bill_type = bill_type
 
         if total_units <= 0:
             raise Exception("Bill se units nahi nikal paaye.")
 
-        rate_per_unit = get_rate_per_unit(total_units, consumer_category, detected_bill_type)
+        rate_per_unit = get_cached_rate(total_units, consumer_category, detected_bill_type)
 
         appliance_data = [
             {"appliance": "AC (Estimated)", "current_monthly_units": round(total_units * 0.25, 1)},
@@ -406,7 +419,7 @@ async def analyze_manual(request: dict):
             raise HTTPException(status_code=400, detail="No valid appliances.")
 
         if rate == 35:
-            rate = get_rate_per_unit(total_units, "non-protected", "WAPDA")
+            rate = get_cached_rate(total_units, "non-protected", "WAPDA")
 
         prompt_template = get_prompt(language)
         prompt = prompt_template.format(
