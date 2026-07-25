@@ -3,106 +3,610 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
-<title>Bijli Bachao AI</title>
-<meta name="description" content="Apne bijli ke bill ko AI se kam karein">
-<meta name="theme-color" content="#1a7a4c">
+<title>Bijli Bachao AI - Smart Energy Saver</title>
+<meta name="description" content="Apne bijli ke bill ko AI se kam karein - apne appliances ke hisaab se personalized tips paayein">
+<meta name="theme-color" content="#0d6efd">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+/* ===== RESET & BASE ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f0f4f8;
+    color: #1a2332;
+    min-height: 100vh;
+    padding: 0 0 60px 0;
+}
+
+/* ===== HEADER ===== */
+.topbar {
+    background: linear-gradient(135deg, #0d6efd, #0a58ca);
+    color: white;
+    padding: 20px 16px;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(13, 110, 253, 0.3);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.brand {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.brand-icon {
+    font-size: 32px;
+}
+
+.tagline {
+    font-size: 14px;
+    opacity: 0.9;
+    margin-top: 4px;
+    font-weight: 400;
+}
+
+/* ===== CONTAINER ===== */
+.container {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+/* ===== LANGUAGE SELECTOR ===== */
+.language-selector {
+    background: white;
+    padding: 14px 18px;
+    border-radius: 14px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid #e9edf2;
+}
+
+.language-selector label {
+    font-weight: 600;
+    font-size: 14px;
+    color: #1a2332;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.language-selector select {
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: 2px solid #e9edf2;
+    background: white;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 500;
+    flex: 1;
+    min-width: 150px;
+    transition: border-color 0.2s;
+}
+
+.language-selector select:focus {
+    outline: none;
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+}
+
+/* ===== TABS ===== */
+.tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.tab-btn {
+    padding: 14px 12px;
+    border: 2px solid #e9edf2;
+    background: white;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    color: #5a6a7a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.tab-btn:hover {
+    background: #f8faff;
+    border-color: #0d6efd40;
+}
+
+.tab-btn.active {
+    background: #0d6efd;
+    color: white;
+    border-color: #0d6efd;
+    box-shadow: 0 4px 14px rgba(13, 110, 253, 0.25);
+}
+
+.tab-btn .tab-icon {
+    font-size: 20px;
+}
+
+/* ===== TAB PANELS ===== */
+.tab-panel {
+    display: none;
+    background: white;
+    border-radius: 18px;
+    padding: 24px 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    border: 1px solid #e9edf2;
+    animation: fadeIn 0.3s ease;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.hint {
+    color: #5a6a7a;
+    font-size: 14px;
+    margin-bottom: 18px;
+    padding: 10px 14px;
+    background: #f8faff;
+    border-radius: 10px;
+    border-left: 4px solid #0d6efd;
+}
+
+/* ===== FORM ELEMENTS ===== */
+.field-label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 5px;
+    color: #1a2332;
+}
+
+input[type="file"] {
+    width: 100%;
+    padding: 14px;
+    border: 2px dashed #d0d7e2;
+    border-radius: 12px;
+    background: #fafcff;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    margin-bottom: 14px;
+}
+
+input[type="file"]:hover {
+    border-color: #0d6efd;
+}
+
+input[type="number"],
+input[type="text"],
+select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid #e9edf2;
+    border-radius: 10px;
+    font-size: 15px;
+    transition: border-color 0.2s;
+    background: white;
+    margin-bottom: 12px;
+}
+
+input:focus,
+select:focus {
+    outline: none;
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.12);
+}
+
+/* ===== BUTTONS ===== */
+.primary-btn {
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, #0d6efd, #0a58ca);
+    color: white;
+    border: none;
+    border-radius: 14px;
+    font-size: 17px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    margin-top: 6px;
+    box-shadow: 0 4px 14px rgba(13, 110, 253, 0.25);
+}
+
+.primary-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(13, 110, 253, 0.35);
+}
+
+.primary-btn:active {
+    transform: translateY(0);
+}
+
+.secondary-btn {
+    padding: 10px 20px;
+    background: #f0f4f8;
+    color: #1a2332;
+    border: 2px dashed #d0d7e2;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin: 6px 0 12px 0;
+}
+
+.secondary-btn:hover {
+    background: #e9edf2;
+    border-color: #0d6efd;
+}
+
+/* ===== APPLIANCE TABLE ===== */
+.appliance-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.appliance-table th {
+    background: #f0f4f8;
+    padding: 10px 8px;
+    text-align: left;
+    font-weight: 600;
+    color: #1a2332;
+    border-bottom: 2px solid #d0d7e2;
+    font-size: 13px;
+}
+
+.appliance-table td {
+    padding: 4px 4px;
+    border-bottom: 1px solid #e9edf2;
+}
+
+.appliance-table input {
+    width: 100%;
+    padding: 8px 6px;
+    border: 2px solid #e9edf2;
+    border-radius: 8px;
+    font-size: 13px;
+    background: white;
+    margin-bottom: 0;
+}
+
+.appliance-table input:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.1);
+}
+
+/* ===== RESULT AREA ===== */
+.result-area {
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 2px solid #e9edf2;
+}
+
+.result-area.hidden {
+    display: none;
+}
+
+.rate-display {
+    background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+    padding: 12px 18px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    color: #1a7a4c;
+    border: 1px solid #a5d6a7;
+    display: none;
+    font-size: 15px;
+}
+
+.rate-display.active {
+    display: block;
+}
+
+/* ===== CHARTS ===== */
+.chart-container {
+    background: #fafcff;
+    border-radius: 12px;
+    padding: 12px;
+    margin: 10px 0;
+    border: 1px solid #e9edf2;
+}
+
+/* ===== SUMMARY ===== */
+.summary-box {
+    background: #f8faff;
+    padding: 18px 20px;
+    border-radius: 14px;
+    border-left: 5px solid #0d6efd;
+    margin-top: 14px;
+    font-size: 15px;
+    line-height: 1.8;
+}
+
+.summary-box h3 {
+    color: #0d6efd;
+    margin: 14px 0 8px 0;
+    font-size: 16px;
+}
+
+.appliance-tip {
+    background: white;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin: 8px 0;
+    border: 1px solid #e9edf2;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+}
+
+.appliance-tip b {
+    color: #0d6efd;
+}
+
+.risk-badge {
+    display: inline-block;
+    padding: 5px 16px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 14px;
+    margin: 6px 0;
+}
+
+.risk-badge[data-risk="Kam"] {
+    background: #d4edda;
+    color: #155724;
+}
+
+.risk-badge[data-risk="Darmiyana"] {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.risk-badge[data-risk="Zyada"] {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.saving-line {
+    font-size: 17px;
+    font-weight: 700;
+    color: #0d6efd;
+    margin: 10px 0;
+    padding: 10px 14px;
+    background: #e8f0fe;
+    border-radius: 10px;
+}
+
+/* ===== LOADING & ERROR ===== */
+.loading {
+    text-align: center;
+    padding: 30px 20px;
+    font-size: 16px;
+    color: #5a6a7a;
+}
+
+.loading::after {
+    content: "...";
+    animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+    0%, 20% { content: ""; }
+    40% { content: "."; }
+    60% { content: ".."; }
+    80% { content: "..."; }
+}
+
+.loading.hidden {
+    display: none;
+}
+
+.error-box {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 14px 18px;
+    border-radius: 12px;
+    border: 1px solid #f5c6cb;
+    margin-top: 14px;
+    display: none;
+}
+
+.error-box.hidden {
+    display: none;
+}
+
+.error-box:not(.hidden) {
+    display: block;
+}
+
+/* ===== FOOTER ===== */
+.footer {
+    text-align: center;
+    padding: 20px 16px;
+    color: #8a9aaa;
+    font-size: 13px;
+    background: white;
+    border-top: 1px solid #e9edf2;
+    margin-top: 20px;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 600px) {
+    .brand {
+        font-size: 22px;
+    }
+    
+    .tab-btn {
+        font-size: 13px;
+        padding: 12px 8px;
+    }
+    
+    .tab-panel {
+        padding: 16px 14px;
+    }
+    
+    .appliance-table th,
+    .appliance-table td {
+        font-size: 12px;
+        padding: 4px 3px;
+    }
+    
+    .appliance-table input {
+        font-size: 12px;
+        padding: 6px 4px;
+    }
+    
+    .primary-btn {
+        font-size: 15px;
+        padding: 14px;
+    }
+    
+    .language-selector {
+        padding: 12px 14px;
+    }
+}
+
+@media (max-width: 400px) {
+    .tabs {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+}
+</style>
 </head>
 <body>
 
 <header class="topbar">
-  <div class="brand">⚡ Bijli Bachao AI</div>
-  <div class="tagline">Apne ghar ke hisaab se bijli ka bill kam karein</div>
+    <div class="brand">
+        <span class="brand-icon">⚡</span> Bijli Bachao AI
+    </div>
+    <div class="tagline">Smart AI-powered energy auditor for Pakistani homes</div>
 </header>
 
 <main class="container">
 
-  <script>
-    window.API_BASE_URL = "";
-  </script>
+    <script>
+        window.API_BASE_URL = "";
+    </script>
 
-  <!-- Language Selector -->
-  <div class="language-selector">
-    <label for="languageSelect">🌐 Report Language:</label>
-    <select id="languageSelect">
-      <option value="roman_urdu">Roman Urdu (اُردو)</option>
-      <option value="urdu_script">Urdu Script (اردو)</option>
-      <option value="english">English</option>
-    </select>
-  </div>
-
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="tab-bill">📄 Sirf Bill Upload Karein</button>
-    <button class="tab-btn" data-tab="tab-manual">🏠 Manual Appliance Entry</button>
-  </div>
-
-  <!-- OPTION 1: Bill upload only -->
-  <section id="tab-bill" class="tab-panel active">
-    <p class="hint">Sirf apne bijli ke bill ki photo upload karein — AI khud units nikal kar report banayega.</p>
-
-    <label class="field-label">Bill Ki Image</label>
-    <input type="file" id="billImageInput" accept="image/*">
-
-    <label class="field-label">Bill Type (Optional)</label>
-    <select id="billTypeSelect">
-      <option value="auto">Auto Detect</option>
-      <option value="WAPDA">WAPDA</option>
-      <option value="K-Electric">K-Electric</option>
-      <option value="Other">Other</option>
-    </select>
-
-    <button id="submitBillBtn" class="primary-btn">Automatic Report Banao</button>
-
-    <div id="billResultArea" class="result-area hidden">
-      <div class="rate-display" id="billRateDisplay"></div>
-      <canvas id="billChart" height="220"></canvas>
-      <div id="billSummary" class="summary-box"></div>
+    <!-- Language Selector -->
+    <div class="language-selector">
+        <label>🌐 Report Language:</label>
+        <select id="languageSelect">
+            <option value="roman_urdu">Roman Urdu (اُردو)</option>
+            <option value="urdu_script">Urdu Script (اردو)</option>
+            <option value="english">English</option>
+        </select>
     </div>
-    <div id="billLoading" class="loading hidden">Report ban rahi hai...</div>
-    <div id="billError" class="error-box hidden"></div>
-  </section>
 
-  <!-- OPTION 2: Manual entry -->
-  <section id="tab-manual" class="tab-panel">
-    <p class="hint">Apne ghar ke appliances ki tadad aur roz ke ghante bharein.</p>
-
-    <table class="appliance-table" id="applianceTable">
-      <thead>
-        <tr>
-          <th>Appliance</th>
-          <th>Watt</th>
-          <th>Tadad</th>
-          <th>Ghantay/Din</th>
-        </tr>
-      </thead>
-      <tbody id="applianceTableBody"></tbody>
-    </table>
-    <button id="addRowBtn" class="secondary-btn">+ Appliance Add Karein</button>
-
-    <button id="submitManualBtn" class="primary-btn">Mera Exact Plan Banao</button>
-
-    <div id="manualResultArea" class="result-area hidden">
-      <div class="rate-display" id="manualRateDisplay"></div>
-      <canvas id="manualChart" height="220"></canvas>
-      <div id="manualSummary" class="summary-box"></div>
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="tab-bill">
+            <span class="tab-icon">📄</span> Bill Upload
+        </button>
+        <button class="tab-btn" data-tab="tab-manual">
+            <span class="tab-icon">🏠</span> Manual Entry
+        </button>
     </div>
-    <div id="manualLoading" class="loading hidden">Report ban rahi hai...</div>
-    <div id="manualError" class="error-box hidden"></div>
-  </section>
+
+    <!-- OPTION 1: Bill Upload -->
+    <section id="tab-bill" class="tab-panel active">
+        <p class="hint">📸 Sirf apne bijli ke bill ki photo upload karein — AI khud units nikal kar report banayega</p>
+
+        <label class="field-label">📎 Bill Image</label>
+        <input type="file" id="billImageInput" accept="image/*">
+
+        <label class="field-label">🏷️ Bill Type</label>
+        <select id="billTypeSelect">
+            <option value="auto">🤖 Auto Detect</option>
+            <option value="WAPDA">⚡ WAPDA</option>
+            <option value="K-Electric">🔌 K-Electric</option>
+            <option value="Other">📋 Other</option>
+        </select>
+
+        <button id="submitBillBtn" class="primary-btn">🚀 Generate AI Report</button>
+
+        <div id="billResultArea" class="result-area hidden">
+            <div class="rate-display" id="billRateDisplay"></div>
+            <div class="chart-container">
+                <canvas id="billChart" height="220"></canvas>
+            </div>
+            <div id="billSummary" class="summary-box"></div>
+        </div>
+        <div id="billLoading" class="loading hidden">⏳ Generating your personalized report</div>
+        <div id="billError" class="error-box hidden"></div>
+    </section>
+
+    <!-- OPTION 2: Manual Entry -->
+    <section id="tab-manual" class="tab-panel">
+        <p class="hint">🔧 Apne ghar ke appliances ki tadad aur roz ke ghante bharein — report bilkul exact banegi</p>
+
+        <div style="overflow-x: auto;">
+            <table class="appliance-table" id="applianceTable">
+                <thead>
+                    <tr>
+                        <th>Appliance</th>
+                        <th>Watt</th>
+                        <th>Qty</th>
+                        <th>Hrs/Day</th>
+                    </tr>
+                </thead>
+                <tbody id="applianceTableBody"></tbody>
+            </table>
+        </div>
+        
+        <button id="addRowBtn" class="secondary-btn">➕ Add Appliance</button>
+
+        <button id="submitManualBtn" class="primary-btn">🚀 Generate My Plan</button>
+
+        <div id="manualResultArea" class="result-area hidden">
+            <div class="rate-display" id="manualRateDisplay"></div>
+            <div class="chart-container">
+                <canvas id="manualChart" height="220"></canvas>
+            </div>
+            <div id="manualSummary" class="summary-box"></div>
+        </div>
+        <div id="manualLoading" class="loading hidden">⏳ Generating your personalized plan</div>
+        <div id="manualError" class="error-box hidden"></div>
+    </section>
 
 </main>
 
-<footer class="footer">Made with ⚡ in Pakistan</footer>
+<footer class="footer">
+    Made with ❤️ in Pakistan — Save Energy, Save Money
+</footer>
 
 <script src="app.js"></script>
 <script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('service-worker.js');
-  }
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js');
+    }
 </script>
 </body>
 </html>
