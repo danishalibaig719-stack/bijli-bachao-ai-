@@ -111,7 +111,7 @@ body {
 /* ===== TABS ===== */
 .tabs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 10px;
     margin-bottom: 18px;
 }
@@ -121,7 +121,7 @@ body {
     border: 2px solid #e9edf2;
     background: white;
     border-radius: 14px;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.25s ease;
@@ -187,21 +187,148 @@ body {
     color: #1a2332;
 }
 
-input[type="file"] {
-    width: 100%;
-    padding: 14px;
-    border: 2px dashed #d0d7e2;
-    border-radius: 12px;
-    background: #fafcff;
-    cursor: pointer;
-    transition: border-color 0.2s;
+/* ===== UPLOAD / SCAN BUTTONS ===== */
+.upload-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
     margin-bottom: 14px;
 }
 
-input[type="file"]:hover {
+.upload-actions .action-btn {
+    padding: 16px 12px;
+    border: 2px solid #e9edf2;
+    border-radius: 12px;
+    background: white;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    color: #1a2332;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.upload-actions .action-btn:hover {
+    border-color: #0d6efd;
+    background: #f8faff;
+}
+
+.upload-actions .action-btn .icon {
+    font-size: 24px;
+}
+
+.upload-actions .action-btn.scan-btn {
+    background: #0d6efd;
+    color: white;
     border-color: #0d6efd;
 }
 
+.upload-actions .action-btn.scan-btn:hover {
+    background: #0a58ca;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(13, 110, 253, 0.3);
+}
+
+input[type="file"] {
+    display: none;
+}
+
+/* ===== CAMERA PREVIEW ===== */
+.camera-container {
+    position: relative;
+    background: #1a2332;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    display: none;
+}
+
+.camera-container.active {
+    display: block;
+}
+
+.camera-container video {
+    width: 100%;
+    height: auto;
+    display: block;
+    max-height: 400px;
+    object-fit: cover;
+}
+
+.camera-container .camera-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: 3px solid rgba(255,255,255,0.3);
+    border-radius: 16px;
+    width: 85%;
+    height: 75%;
+    pointer-events: none;
+}
+
+.camera-container .camera-actions {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 16px;
+}
+
+.camera-container .cam-btn {
+    padding: 14px 28px;
+    border: none;
+    border-radius: 50px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.camera-container .cam-btn.capture {
+    background: white;
+    color: #1a2332;
+}
+
+.camera-container .cam-btn.capture:hover {
+    transform: scale(1.05);
+}
+
+.camera-container .cam-btn.close-cam {
+    background: rgba(255,0,0,0.8);
+    color: white;
+}
+
+.camera-container .cam-btn.close-cam:hover {
+    background: rgba(255,0,0,1);
+}
+
+/* Preview of captured image */
+.captured-preview {
+    display: none;
+    margin: 12px 0;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid #0d6efd;
+}
+
+.captured-preview.active {
+    display: block;
+}
+
+.captured-preview img {
+    width: 100%;
+    height: auto;
+    max-height: 300px;
+    object-fit: contain;
+    background: #f8faff;
+}
+
+/* ===== OTHER FORM ELEMENTS ===== */
 input[type="number"],
 input[type="text"],
 select {
@@ -245,6 +372,12 @@ select:focus {
 
 .primary-btn:active {
     transform: translateY(0);
+}
+
+.primary-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .secondary-btn {
@@ -462,13 +595,32 @@ select:focus {
         font-size: 22px;
     }
     
+    .tabs {
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+    }
+    
     .tab-btn {
-        font-size: 13px;
-        padding: 12px 8px;
+        font-size: 11px;
+        padding: 10px 6px;
+    }
+    
+    .tab-btn .tab-icon {
+        font-size: 16px;
     }
     
     .tab-panel {
         padding: 16px 14px;
+    }
+    
+    .upload-actions {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    
+    .upload-actions .action-btn {
+        font-size: 13px;
+        padding: 12px 8px;
     }
     
     .appliance-table th,
@@ -490,12 +642,21 @@ select:focus {
     .language-selector {
         padding: 12px 14px;
     }
+    
+    .camera-container .cam-btn {
+        padding: 10px 18px;
+        font-size: 14px;
+    }
 }
 
 @media (max-width: 400px) {
     .tabs {
         grid-template-columns: 1fr;
-        gap: 8px;
+        gap: 6px;
+    }
+    
+    .upload-actions {
+        grid-template-columns: 1fr;
     }
 }
 </style>
@@ -530,6 +691,9 @@ select:focus {
         <button class="tab-btn active" data-tab="tab-bill">
             <span class="tab-icon">📄</span> Bill Upload
         </button>
+        <button class="tab-btn" data-tab="tab-scan">
+            <span class="tab-icon">📷</span> Scan Bill
+        </button>
         <button class="tab-btn" data-tab="tab-manual">
             <span class="tab-icon">🏠</span> Manual Entry
         </button>
@@ -537,9 +701,13 @@ select:focus {
 
     <!-- OPTION 1: Bill Upload -->
     <section id="tab-bill" class="tab-panel active">
-        <p class="hint">📸 Sirf apne bijli ke bill ki photo upload karein — AI khud units nikal kar report banayega</p>
+        <p class="hint">📸 Apne bijli ke bill ki photo gallery se select karein</p>
 
-        <label class="field-label">📎 Bill Image</label>
+        <div class="upload-actions">
+            <button class="action-btn" id="uploadBtn">
+                <span class="icon">📁</span> Choose Photo
+            </button>
+        </div>
         <input type="file" id="billImageInput" accept="image/*">
 
         <label class="field-label">🏷️ Bill Type</label>
@@ -563,7 +731,54 @@ select:focus {
         <div id="billError" class="error-box hidden"></div>
     </section>
 
-    <!-- OPTION 2: Manual Entry -->
+    <!-- OPTION 2: Scan Bill (Camera) -->
+    <section id="tab-scan" class="tab-panel">
+        <p class="hint">📷 Apne bill ko direct camera se scan karein — instant analysis</p>
+
+        <div class="upload-actions">
+            <button class="action-btn scan-btn" id="startCameraBtn">
+                <span class="icon">📷</span> Open Camera
+            </button>
+        </div>
+
+        <!-- Camera Container -->
+        <div class="camera-container" id="cameraContainer">
+            <video id="video" autoplay playsinline></video>
+            <div class="camera-overlay"></div>
+            <div class="camera-actions">
+                <button class="cam-btn capture" id="captureBtn">📸 Capture</button>
+                <button class="cam-btn close-cam" id="closeCameraBtn">✕ Close</button>
+            </div>
+        </div>
+
+        <!-- Captured Image Preview -->
+        <div class="captured-preview" id="capturedPreview">
+            <img id="capturedImage" alt="Captured bill">
+            <button id="retakeBtn" class="secondary-btn" style="width:100%;margin-top:8px;">🔄 Retake</button>
+        </div>
+
+        <label class="field-label">🏷️ Bill Type</label>
+        <select id="billTypeSelectScan">
+            <option value="auto">🤖 Auto Detect</option>
+            <option value="WAPDA">⚡ WAPDA</option>
+            <option value="K-Electric">🔌 K-Electric</option>
+            <option value="Other">📋 Other</option>
+        </select>
+
+        <button id="submitScanBtn" class="primary-btn">🚀 Generate AI Report</button>
+
+        <div id="scanResultArea" class="result-area hidden">
+            <div class="rate-display" id="scanRateDisplay"></div>
+            <div class="chart-container">
+                <canvas id="scanChart" height="220"></canvas>
+            </div>
+            <div id="scanSummary" class="summary-box"></div>
+        </div>
+        <div id="scanLoading" class="loading hidden">⏳ Generating your personalized report</div>
+        <div id="scanError" class="error-box hidden"></div>
+    </section>
+
+    <!-- OPTION 3: Manual Entry -->
     <section id="tab-manual" class="tab-panel">
         <p class="hint">🔧 Apne ghar ke appliances ki tadad aur roz ke ghante bharein — report bilkul exact banegi</p>
 
