@@ -26,51 +26,74 @@ if not client:
     print("WARNING: GEMINI_API_KEY not found in environment variables!")
 
 # --- NEPRA Tariff Slabs 2026 (Domestic) ---
-def get_rate_per_unit(total_units: float, consumer_type: str = "protected") -> float:
-    if consumer_type.lower() in ["protected", "lifeline"]:
-        if total_units <= 50:
-            return 3.95
-        elif total_units <= 100:
-            return 7.74
+def get_rate_per_unit(total_units: float, consumer_type: str = "protected", bill_type: str = "WAPDA") -> float:
+    # K-Electric ke rates thore different hain
+    if bill_type.upper() == "K-ELECTRIC":
+        if consumer_type.lower() in ["protected", "lifeline"]:
+            if total_units <= 50:
+                return 4.50
+            elif total_units <= 100:
+                return 8.50
+            elif total_units <= 200:
+                return 14.00
+        if total_units <= 100:
+            return 23.50
         elif total_units <= 200:
-            return 13.01
-    if total_units <= 100:
-        return 22.44
-    elif total_units <= 200:
-        return 28.91
-    elif total_units <= 300:
-        return 33.10
-    elif total_units <= 400:
-        return 37.99
-    elif total_units <= 500:
-        return 40.22
-    elif total_units <= 600:
-        return 41.62
-    elif total_units <= 700:
-        return 42.76
+            return 30.50
+        elif total_units <= 300:
+            return 35.00
+        elif total_units <= 400:
+            return 39.50
+        elif total_units <= 500:
+            return 42.00
+        elif total_units <= 600:
+            return 43.50
+        elif total_units <= 700:
+            return 44.50
+        else:
+            return 49.00
     else:
-        return 47.69
+        # WAPDA / Other
+        if consumer_type.lower() in ["protected", "lifeline"]:
+            if total_units <= 50:
+                return 3.95
+            elif total_units <= 100:
+                return 7.74
+            elif total_units <= 200:
+                return 13.01
+        if total_units <= 100:
+            return 22.44
+        elif total_units <= 200:
+            return 28.91
+        elif total_units <= 300:
+            return 33.10
+        elif total_units <= 400:
+            return 37.99
+        elif total_units <= 500:
+            return 40.22
+        elif total_units <= 600:
+            return 41.62
+        elif total_units <= 700:
+            return 42.76
+        else:
+            return 47.69
 
-# --- ULTRA ROBUST: JSON parser with multiple fallbacks ---
+# --- JSON Parser ---
 def parse_ai_json(response):
     raw_text = response.text.strip()
     
-    # If response is already a string that looks like JSON, try parsing directly
     try:
         return json.loads(raw_text)
     except:
         pass
     
-    # Remove markdown code fences
     raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
     raw_text = re.sub(r'\s*```$', '', raw_text)
     
-    # Find JSON boundaries
     start = raw_text.find('{')
     end = raw_text.rfind('}')
     
     if start == -1 or end == -1:
-        # Try to find anything that looks like JSON
         match = re.search(r'\{[^{}]*\}', raw_text)
         if match:
             json_str = match.group()
@@ -79,58 +102,41 @@ def parse_ai_json(response):
     else:
         json_str = raw_text[start:end+1]
     
-    # Clean common issues
     json_str = re.sub(r',\s*}', '}', json_str)
     json_str = re.sub(r',\s*]', ']', json_str)
     json_str = re.sub(r'\n', ' ', json_str)
     json_str = re.sub(r'\s+', ' ', json_str)
-    
-    # If still has trailing commas in arrays/objects
     json_str = re.sub(r',\s*}', '}', json_str)
     json_str = re.sub(r',\s*]', ']', json_str)
     
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
-        # One more try: manually fix common issues
         json_str = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', json_str)
         try:
             return json.loads(json_str)
         except:
             raise ValueError(f"JSON parse failed: {e}\nCleaned: {json_str[:300]}")
 
-# --- Retry Logic with JSON mode ---
+# --- Retry Logic ---
 async def call_gemini_with_retry(contents, max_retries=3):
     retry_count = 0
     delay = 1
     
-    # Prepare contents for JSON mode
-    if isinstance(contents, list):
-        # If contents is a list (text + image), handle appropriately
-        prompt_text = contents[0] if contents else ""
-        # For JSON mode with images, we need to use the regular API
-        # and parse the response manually
-        generate_config = types.GenerateContentConfig(
-            temperature=0.1,
-            response_mime_type="application/json"
-        )
-    else:
-        generate_config = types.GenerateContentConfig(
-            temperature=0.1,
-            response_mime_type="application/json"
-        )
+    generate_config = types.GenerateContentConfig(
+        temperature=0.1,
+        response_mime_type="application/json"
+    )
     
     while retry_count < max_retries:
         try:
             if isinstance(contents, list) and len(contents) > 1 and isinstance(contents[1], Image.Image):
-                # Image + text case
                 response = client.models.generate_content(
                     model='gemini-flash-latest',
                     contents=contents,
                     config=generate_config
                 )
             else:
-                # Text only case
                 response = client.models.generate_content(
                     model='gemini-flash-latest',
                     contents=contents,
@@ -150,44 +156,98 @@ async def call_gemini_with_retry(contents, max_retries=3):
             else:
                 raise Exception(f"AI service mein masla aaya: {e}") from e
 
-# --- Prompts (with explicit JSON format examples) ---
+# --- Prompts with Language Support ---
 PROMPT_BILL = """
 You are a Pakistani electricity bill analyzer. Look at the bill image and extract:
 
 1. Total Units Consumed (number only)
-2. Consumer Category: "protected" or "non-protected" or "lifeline" — determine from bill text if mentioned, otherwise default to "non-protected"
+2. Consumer Category: "protected" or "non-protected" or "lifeline"
 3. Bill Type: "WAPDA" or "K-Electric" or "Other"
 
-Return ONLY valid JSON with no additional text, no markdown, no explanations. The JSON must be exactly in this format:
-
+Return ONLY valid JSON:
 {"total_units": 200, "consumer_category": "non-protected", "bill_type": "WAPDA"}
 """
 
-PROMPT_MANUAL = """
-You are a friendly Pakistani electrical energy auditor. Respond in Roman Urdu.
+# Language-specific prompts
+PROMPT_MANUAL_ROMAN_URDU = """
+You are a friendly Pakistani electrical energy auditor. Respond in Roman Urdu (Urdu written in English letters).
 
-You are given the user's ACTUAL per-appliance monthly consumption breakdown.
-Appliance data (JSON): {appliance_data}
+Appliance data: {appliance_data}
 Rate per unit (Rs): {rate}
 
-Return ONLY valid JSON with no additional text, no markdown, no explanations. The JSON must be exactly in this format:
-
+Return ONLY valid JSON:
 {{
   "risk_level": "Darmiyana",
   "estimated_monthly_saving_units": 45,
   "estimated_monthly_saving_rs": 1500,
-  "overall_summary_roman_urdu": "Aap ka sab se zyada bijli AC aur fridge use kar rahay hain.",
+  "overall_summary": "Aap ka sab se zyada bijli AC aur fridge use kar rahay hain...",
   "appliance_insights": [
     {{
-      "appliance": "AC (1.5 Ton Split)",
+      "appliance": "AC",
       "current_monthly_units": 150,
       "suggested_daily_hours": 6,
       "monthly_unit_saving": 30,
-      "tip_roman_urdu": "AC ko 24°C par set karein aur timer use karein"
+      "tip": "AC ko 24°C par set karein"
     }}
   ]
 }}
 """
+
+PROMPT_MANUAL_ENGLISH = """
+You are a friendly Pakistani electrical energy auditor. Respond in English.
+
+Appliance data: {appliance_data}
+Rate per unit (Rs): {rate}
+
+Return ONLY valid JSON:
+{{
+  "risk_level": "Medium",
+  "estimated_monthly_saving_units": 45,
+  "estimated_monthly_saving_rs": 1500,
+  "overall_summary": "Your AC and fridge are consuming the most electricity...",
+  "appliance_insights": [
+    {{
+      "appliance": "AC",
+      "current_monthly_units": 150,
+      "suggested_daily_hours": 6,
+      "monthly_unit_saving": 30,
+      "tip": "Set AC to 24°C and use timer"
+    }}
+  ]
+}}
+"""
+
+PROMPT_MANUAL_URDU_SCRIPT = """
+You are a friendly Pakistani electrical energy auditor. Respond in Urdu script (اردو).
+
+Appliance data: {appliance_data}
+Rate per unit (Rs): {rate}
+
+Return ONLY valid JSON:
+{{
+  "risk_level": "درمیانہ",
+  "estimated_monthly_saving_units": 45,
+  "estimated_monthly_saving_rs": 1500,
+  "overall_summary": "آپ کا سب سے زیادہ بجلی اے سی اور فرج استعمال کر رہے ہیں...",
+  "appliance_insights": [
+    {{
+      "appliance": "اے سی",
+      "current_monthly_units": 150,
+      "suggested_daily_hours": 6,
+      "monthly_unit_saving": 30,
+      "tip": "اے سی کو 24°C پر سیٹ کریں اور ٹائمر استعمال کریں"
+    }}
+  ]
+}}
+"""
+
+def get_prompt(language: str):
+    if language == "english":
+        return PROMPT_MANUAL_ENGLISH
+    elif language == "urdu_script":
+        return PROMPT_MANUAL_URDU_SCRIPT
+    else:
+        return PROMPT_MANUAL_ROMAN_URDU
 
 # --- Endpoints ---
 
@@ -196,7 +256,10 @@ async def health_check():
     return {"status": "ok", "message": "Bijli Bachao AI backend is running"}
 
 @app.post("/api/analyze-bill")
-async def analyze_bill(file: UploadFile = File(...)):
+async def analyze_bill(
+    file: UploadFile = File(...),
+    language: str = Form("roman_urdu")
+):
     if not client:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing.")
 
@@ -204,7 +267,6 @@ async def analyze_bill(file: UploadFile = File(...)):
         image_data = await file.read()
         img = Image.open(io.BytesIO(image_data))
 
-        # Step 1: Extract bill info with JSON mode
         response = await call_gemini_with_retry([PROMPT_BILL, img])
         bill_data = parse_ai_json(response)
 
@@ -213,12 +275,10 @@ async def analyze_bill(file: UploadFile = File(...)):
         bill_type = bill_data.get("bill_type", "Other")
 
         if total_units <= 0:
-            raise Exception("Bill se units nahi nikal paaye. Dobara try karein.")
+            raise Exception("Bill se units nahi nikal paaye.")
 
-        # Step 2: Calculate actual rate
-        rate_per_unit = get_rate_per_unit(total_units, consumer_category)
+        rate_per_unit = get_rate_per_unit(total_units, consumer_category, bill_type)
 
-        # Step 3: Estimate appliance breakdown
         appliance_data = [
             {"appliance": "AC (Estimated)", "current_monthly_units": round(total_units * 0.25, 1)},
             {"appliance": "Fridge", "current_monthly_units": round(total_units * 0.15, 1)},
@@ -226,10 +286,12 @@ async def analyze_bill(file: UploadFile = File(...)):
             {"appliance": "Other Appliances", "current_monthly_units": round(total_units * 0.30, 1)}
         ]
         
-        prompt = PROMPT_MANUAL.format(
+        prompt_template = get_prompt(language)
+        prompt = prompt_template.format(
             appliance_data=json.dumps(appliance_data),
             rate=rate_per_unit
         )
+        
         response2 = await call_gemini_with_retry([prompt])
         data = parse_ai_json(response2)
 
@@ -247,7 +309,7 @@ async def analyze_bill(file: UploadFile = File(...)):
             "risk_level": data.get("risk_level"),
             "estimated_monthly_saving_units": data.get("estimated_monthly_saving_units"),
             "estimated_monthly_saving_rs": data.get("estimated_monthly_saving_rs"),
-            "overall_summary_roman_urdu": data.get("overall_summary_roman_urdu"),
+            "overall_summary": data.get("overall_summary"),
             "appliance_insights": data.get("appliance_insights", [])
         }
 
@@ -263,11 +325,11 @@ async def analyze_manual(request: dict):
     try:
         rate = request.get("rate_per_unit", 35)
         appliances = request.get("appliances", [])
+        language = request.get("language", "roman_urdu")
 
         if not appliances:
             raise HTTPException(status_code=400, detail="No appliances provided.")
 
-        # Deterministic calculation
         breakdown = []
         total_units = 0
         for app in appliances:
@@ -282,14 +344,15 @@ async def analyze_manual(request: dict):
         if not breakdown:
             raise HTTPException(status_code=400, detail="No valid appliances.")
 
-        # Auto-calculate rate if user didn't change default
         if rate == 35:
-            rate = get_rate_per_unit(total_units, "non-protected")
+            rate = get_rate_per_unit(total_units, "non-protected", "WAPDA")
 
-        prompt = PROMPT_MANUAL.format(
+        prompt_template = get_prompt(language)
+        prompt = prompt_template.format(
             appliance_data=json.dumps(breakdown),
             rate=rate
         )
+        
         response = await call_gemini_with_retry([prompt])
         data = parse_ai_json(response)
 
@@ -300,7 +363,7 @@ async def analyze_manual(request: dict):
             "risk_level": data.get("risk_level"),
             "estimated_monthly_saving_units": data.get("estimated_monthly_saving_units"),
             "estimated_monthly_saving_rs": data.get("estimated_monthly_saving_rs"),
-            "overall_summary_roman_urdu": data.get("overall_summary_roman_urdu"),
+            "overall_summary": data.get("overall_summary"),
             "appliance_insights": data.get("appliance_insights", [])
         }
 
