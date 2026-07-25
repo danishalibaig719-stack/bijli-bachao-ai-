@@ -16,6 +16,11 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
         document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
         btn.classList.add("active");
         document.getElementById(btn.dataset.tab).classList.add("active");
+        
+        // Stop camera if switching away from scan tab
+        if (btn.dataset.tab !== "tab-scan") {
+            stopCamera();
+        }
     });
 });
 
@@ -70,6 +75,7 @@ function collectAppliances() {
 // CHARTS
 // ============================================================
 let billChartInstance = null;
+let scanChartInstance = null;
 let manualChartInstance = null;
 
 function renderChart(canvasId, breakdown, existingInstance) {
@@ -120,12 +126,11 @@ function renderChart(canvasId, breakdown, existingInstance) {
 }
 
 // ============================================================
-// SUMMARY RENDERER (with proper risk badge)
+// SUMMARY RENDERER
 // ============================================================
 function renderSummary(container, data) {
     let html = "";
 
-    // Info cards
     if (data.total_units !== undefined || data.rate_per_unit !== undefined) {
         html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">`;
         if (data.total_units !== undefined) {
@@ -143,23 +148,19 @@ function renderSummary(container, data) {
         html += `</div>`;
     }
 
-    // Risk Badge
     const risk = data.risk_level || "-";
     const riskClass = risk.toLowerCase().includes("kam") ? "Kam" : 
                      risk.toLowerCase().includes("zyada") ? "Zyada" : "Darmiyana";
     html += `<div class="risk-badge" data-risk="${riskClass}">⚠️ Risk Level: ${risk}</div>`;
 
-    // Savings
     if (data.estimated_monthly_saving_units) {
         html += `<div class="saving-line">💰 Estimated Monthly Saving: ${data.estimated_monthly_saving_units} Units (~Rs ${data.estimated_monthly_saving_rs || 'N/A'})</div>`;
     }
 
-    // Summary
     if (data.overall_summary) {
         html += `<p style="margin:12px 0 6px 0;font-size:16px;">${data.overall_summary}</p>`;
     }
 
-    // Appliance insights
     const insights = data.appliance_insights || [];
     if (insights.length > 0) {
         html += `<h3>🔧 Appliance-Wise Recommendations</h3>`;
@@ -214,123 +215,30 @@ function compressImage(file, maxWidth = 1400, quality = 0.75) {
 }
 
 // ============================================================
-// OPTION 1: BILL UPLOAD
+// CAMERA FUNCTIONALITY
 // ============================================================
-document.getElementById("submitBillBtn").addEventListener("click", async () => {
-    const fileInput = document.getElementById("billImageInput");
-    const billType = document.getElementById("billTypeSelect").value;
-    const loading = document.getElementById("billLoading");
-    const errorBox = document.getElementById("billError");
-    const resultArea = document.getElementById("billResultArea");
-    const rateDisplay = document.getElementById("billRateDisplay");
+let stream = null;
+let capturedFile = null;
 
-    errorBox.classList.add("hidden");
-    resultArea.classList.add("hidden");
+const video = document.getElementById('video');
+const cameraContainer = document.getElementById('cameraContainer');
+const capturedPreview = document.getElementById('capturedPreview');
+const capturedImage = document.getElementById('capturedImage');
+const startCameraBtn = document.getElementById('startCameraBtn');
+const captureBtn = document.getElementById('captureBtn');
+const closeCameraBtn = document.getElementById('closeCameraBtn');
+const retakeBtn = document.getElementById('retakeBtn');
 
-    if (!fileInput.files.length) {
-        errorBox.textContent = "❌ Please upload a bill image first.";
-        errorBox.classList.remove("hidden");
-        return;
-    }
-
-    loading.classList.remove("hidden");
-
+async function startCamera() {
     try {
-        const compressedFile = await compressImage(fileInput.files[0]);
-        const formData = new FormData();
-        formData.append("file", compressedFile);
-        formData.append("language", getSelectedLanguage());
-        formData.append("bill_type", billType);
-
-        const res = await fetch(`${window.API_BASE_URL}/api/analyze-bill`, {
-            method: "POST",
-            body: formData
+        stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } 
         });
-
-        if (!res.ok) {
-            let message = `Server error (${res.status})`;
-            try {
-                const err = await res.json();
-                message = err.detail || message;
-            } catch (_) {}
-            throw new Error(message);
-        }
-
-        const data = await res.json();
-
-        if (data.rate_per_unit) {
-            rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit | ${data.bill_type || 'Auto'} | ${data.consumer_category || 'N/A'}`;
-            rateDisplay.classList.add("active");
-        }
-
-        billChartInstance = renderChart("billChart", data.breakdown, billChartInstance);
-        renderSummary(document.getElementById("billSummary"), data);
-        resultArea.classList.remove("hidden");
-
-    } catch (e) {
-        errorBox.textContent = `❌ ${e.message}`;
-        errorBox.classList.remove("hidden");
-    } finally {
-        loading.classList.add("hidden");
-    }
-});
-
-// ============================================================
-// OPTION 2: MANUAL ENTRY
-// ============================================================
-document.getElementById("submitManualBtn").addEventListener("click", async () => {
-    const loading = document.getElementById("manualLoading");
-    const errorBox = document.getElementById("manualError");
-    const resultArea = document.getElementById("manualResultArea");
-    const rateDisplay = document.getElementById("manualRateDisplay");
-
-    errorBox.classList.add("hidden");
-    resultArea.classList.add("hidden");
-
-    const appliances = collectAppliances();
-    if (!appliances.length) {
-        errorBox.textContent = "❌ Please fill in at least one appliance with qty and hours.";
-        errorBox.classList.remove("hidden");
-        return;
-    }
-
-    loading.classList.remove("hidden");
-
-    try {
-        const res = await fetch(`${window.API_BASE_URL}/api/analyze-manual`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                rate_per_unit: 35,
-                appliances: appliances,
-                language: getSelectedLanguage()
-            })
-        });
-
-        if (!res.ok) {
-            let message = `Server error (${res.status})`;
-            try {
-                const err = await res.json();
-                message = err.detail || message;
-            } catch (_) {}
-            throw new Error(message);
-        }
-
-        const data = await res.json();
-
-        if (data.rate_per_unit) {
-            rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit`;
-            rateDisplay.classList.add("active");
-        }
-
-        manualChartInstance = renderChart("manualChart", data.breakdown, manualChartInstance);
-        renderSummary(document.getElementById("manualSummary"), data);
-        resultArea.classList.remove("hidden");
-
-    } catch (e) {
-        errorBox.textContent = `❌ ${e.message}`;
-        errorBox.classList.remove("hidden");
-    } finally {
-        loading.classList.add("hidden");
-    }
-});
+        video.srcObject = stream;
+        cameraContainer.classList.add('active');
+        capturedPreview.classList.remove('active');
+        capturedFile = null;
+        startCameraBtn.textContent = '📷 Camera Open';
+        startCameraBtn.style.opacity = '0.6';
+    } catch (err) {
+        alert('Camera open nahi ho paai. Please
