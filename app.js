@@ -1,5 +1,14 @@
 // ---------------------------------------------------------
-// Tabs Logic
+// Language Selector
+// ---------------------------------------------------------
+const languageSelect = document.getElementById("languageSelect");
+
+function getSelectedLanguage() {
+    return languageSelect.value;
+}
+
+// ---------------------------------------------------------
+// Tabs
 // ---------------------------------------------------------
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -58,51 +67,20 @@ function collectAppliances() {
 }
 
 // ---------------------------------------------------------
-// Helper: Fetch with retry (specifically handling 429 and 503 errors)
-// ---------------------------------------------------------
-async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await fetch(url, options);
-      
-      // If hit 429 (Rate Limit) or 503 (Busy)
-      if (response.status === 429 || response.status === 503) {
-        throw new Error(response.status === 429 ? "429_RATE_LIMIT" : "503_SERVICE_UNAVAILABLE");
-      }
-      return response;
-    } catch (err) {
-      // Retry if it's rate limit or temporary server error
-      if ((err.message === "429_RATE_LIMIT" || err.message === "503_SERVICE_UNAVAILABLE") && i < retries - 1) {
-        console.warn(`Gemini API busy/rate-limited (${err.message}). Retrying in ${delay / 1000}s... (Attempt ${i + 1}/${retries})`);
-        await new Promise(res => setTimeout(res, delay));
-        // Double the delay for exponential backoff
-        delay *= 1.5; 
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-// ---------------------------------------------------------
-// Chart rendering helper
+// Chart rendering
 // ---------------------------------------------------------
 let billChartInstance = null;
 let manualChartInstance = null;
 
 function renderChart(canvasId, breakdown, existingInstance) {
-  if (typeof Chart === "undefined") {
-    console.error("Chart library loaded nahi ho saki.");
-    return null;
-  }
   if (existingInstance) existingInstance.destroy();
-  
+
   const sorted = [...breakdown].sort((a, b) => b.current_monthly_units - a.current_monthly_units);
   const labels = sorted.map(i => i.appliance);
   const values = sorted.map(i => i.current_monthly_units);
   const maxVal = Math.max(...values, 1);
+
   const ctx = document.getElementById(canvasId).getContext("2d");
-  
   return new Chart(ctx, {
     type: "bar",
     data: {
@@ -124,32 +102,45 @@ function renderChart(canvasId, breakdown, existingInstance) {
 }
 
 // ---------------------------------------------------------
-// Summary rendering helper
+// Summary rendering with language support
 // ---------------------------------------------------------
 function renderSummary(container, data) {
   let html = "";
-  if (data.extracted_bill_units !== undefined) {
-    html += `<div><b>Bill Se Nikale Gaye Units:</b> ${data.extracted_bill_units}</div>`;
+  
+  if (data.total_units !== undefined) {
+    html += `<div><b>Total Units:</b> ${data.total_units}</div>`;
   }
+  if (data.rate_per_unit !== undefined) {
+    html += `<div><b>Rate per Unit:</b> Rs ${data.rate_per_unit}</div>`;
+  }
+  if (data.bill_type) {
+    html += `<div><b>Bill Type:</b> ${data.bill_type}</div>`;
+  }
+  if (data.consumer_category) {
+    html += `<div><b>Consumer Category:</b> ${data.consumer_category}</div>`;
+  }
+  
   html += `<div class="risk-badge">Risk: ${data.risk_level || "-"}</div>`;
-  html += `<div class="saving-line">Andazan Mahana Bachat: ${data.estimated_monthly_saving_units || "-"} Units (~Rs ${data.estimated_monthly_saving_rs || "-"})</div>`;
-  html += `<p>${data.overall_summary_roman_urdu || ""}</p>`;
-  html += `<h3>Appliance-Wise Specific Steps</h3>`;
+  html += `<div class="saving-line">Estimated Monthly Saving: ${data.estimated_monthly_saving_units || "-"} Units (~Rs ${data.estimated_monthly_saving_rs || "-"})</div>`;
+  html += `<p>${data.overall_summary || ""}</p>`;
+  html += `<h3>Appliance-Wise Steps</h3>`;
+  
   (data.appliance_insights || []).forEach(item => {
     html += `<div class="appliance-tip">
-      <b>${item.appliance}</b>: abhi ${item.current_monthly_units} units/mahina
-      → ${item.suggested_daily_hours} ghante/din karein
-      → <b>${item.monthly_unit_saving} units bachenge</b>.<br>
-      ${item.tip_roman_urdu}
+      <b>${item.appliance}</b>: ${item.current_monthly_units} units/month
+      → ${item.suggested_daily_hours} hours/day
+      → <b>${item.monthly_unit_saving} units saved</b>.<br>
+      ${item.tip || ""}
     </div>`;
   });
+  
   container.innerHTML = html;
 }
 
 // ---------------------------------------------------------
-// Image compression helper
+// Image compression
 // ---------------------------------------------------------
-function compressImage(file, maxWidth = 1000, quality = 0.65) {
+function compressImage(file, maxWidth = 1400, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -183,70 +174,37 @@ function compressImage(file, maxWidth = 1000, quality = 0.65) {
 }
 
 // ---------------------------------------------------------
-// Cooldown Button Helper (Blocks double-taps for 12 seconds)
-// ---------------------------------------------------------
-function setButtonCooldown(button, duration = 12000) {
-  const originalText = button.textContent;
-  button.disabled = true;
-  let secondsLeft = Math.ceil(duration / 1000);
-  
-  const interval = setInterval(() => {
-    secondsLeft--;
-    button.textContent = `Rukiye... (${secondsLeft}s)`;
-    if (secondsLeft <= 0) {
-      clearInterval(interval);
-      button.disabled = false;
-      button.textContent = originalText;
-    }
-  }, 1000);
-}
-
-// ---------------------------------------------------------
 // Option 1: Bill upload submit
 // ---------------------------------------------------------
-document.getElementById("submitBillBtn").addEventListener("click", async (e) => {
-  const btn = e.target;
+document.getElementById("submitBillBtn").addEventListener("click", async () => {
   const fileInput = document.getElementById("billImageInput");
-  const rate = document.getElementById("rateBill").value || 35;
   const loading = document.getElementById("billLoading");
   const errorBox = document.getElementById("billError");
   const resultArea = document.getElementById("billResultArea");
-  
+  const rateDisplay = document.getElementById("billRateDisplay");
+
   errorBox.classList.add("hidden");
   resultArea.classList.add("hidden");
-  
+
   if (!fileInput.files.length) {
     errorBox.textContent = "Pehle bill ki image upload karein.";
     errorBox.classList.remove("hidden");
     return;
   }
-  
+
   loading.classList.remove("hidden");
-  setButtonCooldown(btn, 12000); // 12 seconds break
-  
+
   try {
     const compressedFile = await compressImage(fileInput.files[0]);
     const formData = new FormData();
     formData.append("file", compressedFile);
-    formData.append("rate_per_unit", rate);
-    
-    const res = await fetchWithRetry(`${window.API_BASE_URL}/api/analyze-bill`, {
+    formData.append("language", getSelectedLanguage());
+
+    const res = await fetch(`${window.API_BASE_URL}/api/analyze-bill`, {
       method: "POST",
       body: formData
     });
-    
-    if (!res) {
-      throw new Error("AI models par load ki wajah se timeout ho gaya.");
-    }
-    
-    if (res.status === 504) {
-      throw new Error("504_TIMEOUT");
-    }
-    
-    if (res.status === 429) {
-      throw new Error("429_RATE_LIMIT");
-    }
-    
+
     if (!res.ok) {
       let message = `Server error (status ${res.status}).`;
       try {
@@ -255,19 +213,20 @@ document.getElementById("submitBillBtn").addEventListener("click", async (e) => 
       } catch (_) {}
       throw new Error(message);
     }
-    
+
     const data = await res.json();
+    
+    // Show rate info
+    if (data.rate_per_unit) {
+      rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit | Bill: ${data.bill_type || "Auto"} | Category: ${data.consumer_category || "N/A"}`;
+      rateDisplay.style.display = "block";
+    }
+    
     billChartInstance = renderChart("billChart", data.breakdown, billChartInstance);
     renderSummary(document.getElementById("billSummary"), data);
     resultArea.classList.remove("hidden");
-  } catch (err) {
-    if (err.message.includes("429") || err.message === "429_RATE_LIMIT") {
-      errorBox.innerHTML = "⚠️ <b>Hamaray Free AI server ki limit khatam ho chuki hai!</b><br>Apne Google Console par limits check karein ya 1 minute ke baad dobara submit karein (Google 1 minute mein sirf 5 requests allow karta hai).";
-    } else if (err.message.includes("504") || err.message === "504_TIMEOUT") {
-      errorBox.textContent = "Server Timeout (504): Report analysis bohot slow chal rahi hai. Koshish karein ke direct manual tools use karein ya dobara submit dabaein.";
-    } else {
-      errorBox.textContent = err.message;
-    }
+  } catch (e) {
+    errorBox.textContent = e.message;
     errorBox.classList.remove("hidden");
   } finally {
     loading.classList.add("hidden");
@@ -277,45 +236,35 @@ document.getElementById("submitBillBtn").addEventListener("click", async (e) => 
 // ---------------------------------------------------------
 // Option 2: Manual submit
 // ---------------------------------------------------------
-document.getElementById("submitManualBtn").addEventListener("click", async (e) => {
-  const btn = e.target;
-  const rate = document.getElementById("rateManual").value || 35;
+document.getElementById("submitManualBtn").addEventListener("click", async () => {
   const loading = document.getElementById("manualLoading");
   const errorBox = document.getElementById("manualError");
   const resultArea = document.getElementById("manualResultArea");
-  
+  const rateDisplay = document.getElementById("manualRateDisplay");
+
   errorBox.classList.add("hidden");
   resultArea.classList.add("hidden");
-  
+
   const appliances = collectAppliances();
   if (!appliances.length) {
     errorBox.textContent = "Kam az kam ek appliance ki tadad aur ghante bharein.";
     errorBox.classList.remove("hidden");
     return;
   }
-  
+
   loading.classList.remove("hidden");
-  setButtonCooldown(btn, 12000); // 12 seconds break
-  
+
   try {
-    const res = await fetchWithRetry(`${window.API_BASE_URL}/api/analyze-manual`, {
+    const res = await fetch(`${window.API_BASE_URL}/api/analyze-manual`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rate_per_unit: parseFloat(rate), appliances })
+      body: JSON.stringify({
+        rate_per_unit: 35,
+        appliances: appliances,
+        language: getSelectedLanguage()
+      })
     });
-    
-    if (!res) {
-      throw new Error("AI models par load ki wajah se timeout ho gaya.");
-    }
-    
-    if (res.status === 504) {
-      throw new Error("504_TIMEOUT");
-    }
-    
-    if (res.status === 429) {
-      throw new Error("429_RATE_LIMIT");
-    }
-    
+
     if (!res.ok) {
       let message = `Server error (status ${res.status}).`;
       try {
@@ -324,19 +273,19 @@ document.getElementById("submitManualBtn").addEventListener("click", async (e) =
       } catch (_) {}
       throw new Error(message);
     }
-    
+
     const data = await res.json();
+    
+    if (data.rate_per_unit) {
+      rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit`;
+      rateDisplay.style.display = "block";
+    }
+    
     manualChartInstance = renderChart("manualChart", data.breakdown, manualChartInstance);
     renderSummary(document.getElementById("manualSummary"), data);
     resultArea.classList.remove("hidden");
-  } catch (err) {
-    if (err.message.includes("429") || err.message === "429_RATE_LIMIT") {
-      errorBox.innerHTML = "⚠️ <b>Free API Limit Exhausted (429 Error):</b><br>Google Gemini 1 minute mein 5 requests se zyada allow nahi karta. Bara-e-meherbani 30 se 60 seconds intezar kar ke dobara try karein.";
-    } else if (err.message.includes("504") || err.message === "504_TIMEOUT") {
-      errorBox.textContent = "Server Timeout (504): AI response ready nahi kar paya. Thoda sa waqt le kar dubara try karein.";
-    } else {
-      errorBox.textContent = err.message;
-    }
+  } catch (e) {
+    errorBox.textContent = e.message;
     errorBox.classList.remove("hidden");
   } finally {
     loading.classList.add("hidden");
