@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>Bijli Bachao AI - Smart Energy Saver</title>
 <meta name="description" content="Apne bijli ke bill ko AI se kam karein - apne appliances ke hisaab se personalized tips paayein">
-<meta name="theme-color" content="#0d6efd">
+<meta name="theme-color" content="#1a7a4c">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -20,19 +20,19 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #f0f4f8;
+    background: #f0f8f4;
     color: #1a2332;
     min-height: 100vh;
     padding: 0 0 60px 0;
 }
 
-/* ===== HEADER ===== */
+/* ===== HEADER - GREEN THEME ===== */
 .topbar {
-    background: linear-gradient(135deg, #0d6efd, #0a58ca);
+    background: linear-gradient(135deg, #1a7a4c, #0d5e3a);
     color: white;
     padding: 20px 16px;
     text-align: center;
-    box-shadow: 0 4px 20px rgba(13, 110, 253, 0.3);
+    box-shadow: 0 4px 20px rgba(26, 122, 76, 0.3);
     position: sticky;
     top: 0;
     z-index: 100;
@@ -77,7 +77,7 @@ body {
     gap: 14px;
     flex-wrap: wrap;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    border: 1px solid #e9edf2;
+    border: 1px solid #d4edda;
 }
 
 .language-selector label {
@@ -92,7 +92,7 @@ body {
 .language-selector select {
     padding: 8px 16px;
     border-radius: 10px;
-    border: 2px solid #e9edf2;
+    border: 2px solid #d4edda;
     background: white;
     font-size: 14px;
     cursor: pointer;
@@ -104,8 +104,8 @@ body {
 
 .language-selector select:focus {
     outline: none;
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    border-color: #1a7a4c;
+    box-shadow: 0 0 0 3px rgba(26, 122, 76, 0.15);
 }
 
 /* ===== TABS ===== */
@@ -118,7 +118,7 @@ body {
 
 .tab-btn {
     padding: 14px 12px;
-    border: 2px solid #e9edf2;
+    border: 2px solid #d4edda;
     background: white;
     border-radius: 14px;
     font-size: 14px;
@@ -133,15 +133,15 @@ body {
 }
 
 .tab-btn:hover {
-    background: #f8faff;
-    border-color: #0d6efd40;
+    background: #f0faf4;
+    border-color: #1a7a4c40;
 }
 
 .tab-btn.active {
-    background: #0d6efd;
+    background: #1a7a4c;
     color: white;
-    border-color: #0d6efd;
-    box-shadow: 0 4px 14px rgba(13, 110, 253, 0.25);
+    border-color: #1a7a4c;
+    box-shadow: 0 4px 14px rgba(26, 122, 76, 0.25);
 }
 
 .tab-btn .tab-icon {
@@ -155,7 +155,7 @@ body {
     border-radius: 18px;
     padding: 24px 20px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-    border: 1px solid #e9edf2;
+    border: 1px solid #d4edda;
     animation: fadeIn 0.3s ease;
 }
 
@@ -173,9 +173,9 @@ body {
     font-size: 14px;
     margin-bottom: 18px;
     padding: 10px 14px;
-    background: #f8faff;
+    background: #f0faf4;
     border-radius: 10px;
-    border-left: 4px solid #0d6efd;
+    border-left: 4px solid #1a7a4c;
 }
 
 /* ===== FORM ELEMENTS ===== */
@@ -197,7 +197,7 @@ body {
 
 .upload-actions .action-btn {
     padding: 16px 12px;
-    border: 2px solid #e9edf2;
+    border: 2px solid #d4edda;
     border-radius: 12px;
     background: white;
     font-size: 15px;
@@ -212,8 +212,8 @@ body {
 }
 
 .upload-actions .action-btn:hover {
-    border-color: #0d6efd;
-    background: #f8faff;
+    border-color: #1a7a4c;
+    background: #f0faf4;
 }
 
 .upload-actions .action-btn .icon {
@@ -221,19 +221,51 @@ body {
 }
 
 .upload-actions .action-btn.scan-btn {
-    background: #0d6efd;
+    background: #1a7a4c;
     color: white;
-    border-color: #0d6efd;
+    border-color: #1a7a4c;
 }
 
 .upload-actions .action-btn.scan-btn:hover {
-    background: #0a58ca;
+    background: #0d5e3a;
     transform: translateY(-2px);
-    box-shadow: 0 4px 14px rgba(13, 110, 253, 0.3);
+    box-shadow: 0 4px 14px rgba(26, 122, 76, 0.3);
 }
 
 input[type="file"] {
     display: none;
+}
+
+/* ===== UPLOAD STATUS INDICATOR ===== */
+.upload-status {
+    display: none;
+    padding: 10px 16px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    font-weight: 600;
+    font-size: 14px;
+    align-items: center;
+    gap: 10px;
+}
+
+.upload-status.active {
+    display: flex;
+}
+
+.upload-status.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #a5d6a7;
+}
+
+.upload-status.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.upload-status .status-icon {
+    font-size: 20px;
 }
 
 /* ===== CAMERA PREVIEW ===== */
@@ -313,7 +345,7 @@ input[type="file"] {
     margin: 12px 0;
     border-radius: 12px;
     overflow: hidden;
-    border: 2px solid #0d6efd;
+    border: 2px solid #1a7a4c;
 }
 
 .captured-preview.active {
@@ -325,7 +357,7 @@ input[type="file"] {
     height: auto;
     max-height: 300px;
     object-fit: contain;
-    background: #f8faff;
+    background: #f0faf4;
 }
 
 /* ===== OTHER FORM ELEMENTS ===== */
@@ -334,7 +366,7 @@ input[type="text"],
 select {
     width: 100%;
     padding: 12px 14px;
-    border: 2px solid #e9edf2;
+    border: 2px solid #d4edda;
     border-radius: 10px;
     font-size: 15px;
     transition: border-color 0.2s;
@@ -345,15 +377,15 @@ select {
 input:focus,
 select:focus {
     outline: none;
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.12);
+    border-color: #1a7a4c;
+    box-shadow: 0 0 0 3px rgba(26, 122, 76, 0.12);
 }
 
-/* ===== BUTTONS ===== */
+/* ===== BUTTONS - GREEN THEME ===== */
 .primary-btn {
     width: 100%;
     padding: 16px;
-    background: linear-gradient(135deg, #0d6efd, #0a58ca);
+    background: linear-gradient(135deg, #1a7a4c, #0d5e3a);
     color: white;
     border: none;
     border-radius: 14px;
@@ -362,12 +394,12 @@ select:focus {
     cursor: pointer;
     transition: all 0.25s ease;
     margin-top: 6px;
-    box-shadow: 0 4px 14px rgba(13, 110, 253, 0.25);
+    box-shadow: 0 4px 14px rgba(26, 122, 76, 0.25);
 }
 
 .primary-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(13, 110, 253, 0.35);
+    box-shadow: 0 8px 24px rgba(26, 122, 76, 0.35);
 }
 
 .primary-btn:active {
@@ -382,9 +414,9 @@ select:focus {
 
 .secondary-btn {
     padding: 10px 20px;
-    background: #f0f4f8;
+    background: #f0faf4;
     color: #1a2332;
-    border: 2px dashed #d0d7e2;
+    border: 2px dashed #d4edda;
     border-radius: 10px;
     font-size: 14px;
     font-weight: 600;
@@ -394,8 +426,8 @@ select:focus {
 }
 
 .secondary-btn:hover {
-    background: #e9edf2;
-    border-color: #0d6efd;
+    background: #d4edda;
+    border-color: #1a7a4c;
 }
 
 /* ===== APPLIANCE TABLE ===== */
@@ -407,24 +439,24 @@ select:focus {
 }
 
 .appliance-table th {
-    background: #f0f4f8;
+    background: #f0faf4;
     padding: 10px 8px;
     text-align: left;
     font-weight: 600;
     color: #1a2332;
-    border-bottom: 2px solid #d0d7e2;
+    border-bottom: 2px solid #d4edda;
     font-size: 13px;
 }
 
 .appliance-table td {
     padding: 4px 4px;
-    border-bottom: 1px solid #e9edf2;
+    border-bottom: 1px solid #d4edda;
 }
 
 .appliance-table input {
     width: 100%;
     padding: 8px 6px;
-    border: 2px solid #e9edf2;
+    border: 2px solid #d4edda;
     border-radius: 8px;
     font-size: 13px;
     background: white;
@@ -432,15 +464,15 @@ select:focus {
 }
 
 .appliance-table input:focus {
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.1);
+    border-color: #1a7a4c;
+    box-shadow: 0 0 0 2px rgba(26, 122, 76, 0.1);
 }
 
 /* ===== RESULT AREA ===== */
 .result-area {
     margin-top: 20px;
     padding-top: 18px;
-    border-top: 2px solid #e9edf2;
+    border-top: 2px solid #d4edda;
 }
 
 .result-area.hidden {
@@ -469,22 +501,22 @@ select:focus {
     border-radius: 12px;
     padding: 12px;
     margin: 10px 0;
-    border: 1px solid #e9edf2;
+    border: 1px solid #d4edda;
 }
 
 /* ===== SUMMARY ===== */
 .summary-box {
-    background: #f8faff;
+    background: #f0faf4;
     padding: 18px 20px;
     border-radius: 14px;
-    border-left: 5px solid #0d6efd;
+    border-left: 5px solid #1a7a4c;
     margin-top: 14px;
     font-size: 15px;
     line-height: 1.8;
 }
 
 .summary-box h3 {
-    color: #0d6efd;
+    color: #1a7a4c;
     margin: 14px 0 8px 0;
     font-size: 16px;
 }
@@ -494,12 +526,12 @@ select:focus {
     padding: 12px 16px;
     border-radius: 10px;
     margin: 8px 0;
-    border: 1px solid #e9edf2;
+    border: 1px solid #d4edda;
     box-shadow: 0 1px 4px rgba(0,0,0,0.03);
 }
 
 .appliance-tip b {
-    color: #0d6efd;
+    color: #1a7a4c;
 }
 
 .risk-badge {
@@ -529,10 +561,10 @@ select:focus {
 .saving-line {
     font-size: 17px;
     font-weight: 700;
-    color: #0d6efd;
+    color: #1a7a4c;
     margin: 10px 0;
     padding: 10px 14px;
-    background: #e8f0fe;
+    background: #e8f5e9;
     border-radius: 10px;
 }
 
@@ -585,7 +617,7 @@ select:focus {
     color: #8a9aaa;
     font-size: 13px;
     background: white;
-    border-top: 1px solid #e9edf2;
+    border-top: 1px solid #d4edda;
     margin-top: 20px;
 }
 
@@ -689,13 +721,13 @@ select:focus {
     <!-- Tabs -->
     <div class="tabs">
         <button class="tab-btn active" data-tab="tab-bill">
-            <span class="tab-icon">📄</span> Bill Upload
+            <span class="tab-icon">📄</span> Upload
         </button>
         <button class="tab-btn" data-tab="tab-scan">
-            <span class="tab-icon">📷</span> Scan Bill
+            <span class="tab-icon">📷</span> Scan
         </button>
         <button class="tab-btn" data-tab="tab-manual">
-            <span class="tab-icon">🏠</span> Manual Entry
+            <span class="tab-icon">🏠</span> Manual
         </button>
     </div>
 
@@ -709,6 +741,12 @@ select:focus {
             </button>
         </div>
         <input type="file" id="billImageInput" accept="image/*">
+
+        <!-- Upload Status Indicator -->
+        <div class="upload-status" id="uploadStatus">
+            <span class="status-icon">✅</span>
+            <span class="status-text" id="uploadStatusText">File selected: </span>
+        </div>
 
         <label class="field-label">🏷️ Bill Type</label>
         <select id="billTypeSelect">
