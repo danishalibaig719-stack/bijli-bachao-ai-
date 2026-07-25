@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import re
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
@@ -24,10 +25,7 @@ if not client:
     print("WARNING: GEMINI_API_KEY not found in environment variables!")
 
 # --- NEPRA Tariff Slabs 2026 (Domestic) ---
-# Returns rate per unit based on total units and consumer category
 def get_rate_per_unit(total_units: float, consumer_type: str = "protected") -> float:
-    # Protected consumers: 1-200 units at subsidized rates
-    # Non-protected: higher rates for same consumption
     if consumer_type.lower() in ["protected", "lifeline"]:
         if total_units <= 50:
             return 3.95
@@ -35,7 +33,6 @@ def get_rate_per_unit(total_units: float, consumer_type: str = "protected") -> f
             return 7.74
         elif total_units <= 200:
             return 13.01
-    # Non-protected or other
     if total_units <= 100:
         return 22.44
     elif total_units <= 200:
@@ -52,6 +49,37 @@ def get_rate_per_unit(total_units: float, consumer_type: str = "protected") -> f
         return 42.76
     else:
         return 47.69
+
+# --- IMPROVED: Robust JSON parser ---
+def parse_ai_json(response):
+    raw_text = response.text.strip()
+    
+    # Remove markdown code fences if present
+    raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
+    raw_text = re.sub(r'\s*```$', '', raw_text)
+    
+    # Find the first { and last } to extract only JSON
+    start = raw_text.find('{')
+    end = raw_text.rfind('}')
+    
+    if start == -1 or end == -1:
+        raise ValueError(f"No JSON object found in response. Raw: {raw_text[:200]}")
+    
+    json_str = raw_text[start:end+1]
+    
+    # Remove any trailing commas before closing braces (common Gemini issue)
+    json_str = re.sub(r',\s*}', '}', json_str)
+    json_str = re.sub(r',\s*]', ']', json_str)
+    
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        # If still failing, try to fix by removing extra spaces and newlines
+        cleaned = re.sub(r'\s+', ' ', json_str)
+        try:
+            return json.loads(cleaned)
+        except:
+            raise ValueError(f"JSON parse error: {e}\nCleaned: {json_str[:300]}")
 
 # --- Retry Logic ---
 async def call_gemini_with_retry(contents, max_retries=3):
@@ -88,9 +116,9 @@ You are a Pakistani electricity bill analyzer. Look at the bill image and extrac
 Return STRICT JSON ONLY, no extra text, no markdown:
 
 {
-  "total_units": <number>,
-  "consumer_category": "<protected|non-protected|lifeline>",
-  "bill_type": "<WAPDA|K-Electric|Other>"
+  "total_units": 200,
+  "consumer_category": "non-protected",
+  "bill_type": "WAPDA"
 }
 """
 
@@ -101,32 +129,24 @@ You are given the user's ACTUAL per-appliance monthly consumption breakdown.
 Appliance data (JSON): {appliance_data}
 Rate per unit (Rs): {rate}
 
-Return STRICT JSON ONLY:
+Return STRICT JSON ONLY, no markdown, no extra text:
 
 {
-  "risk_level": "<Kam|Darmiyana|Zyada>",
-  "estimated_monthly_saving_units": <number>,
-  "estimated_monthly_saving_rs": <number>,
-  "overall_summary_roman_urdu": "<2-3 line summary>",
+  "risk_level": "Darmiyana",
+  "estimated_monthly_saving_units": 45,
+  "estimated_monthly_saving_rs": 1500,
+  "overall_summary_roman_urdu": "Aap ka sab se zyada bijli AC aur fridge use kar rahay hain...",
   "appliance_insights": [
     {
-      "appliance": "<name>",
-      "current_monthly_units": <number>,
-      "suggested_daily_hours": <number>,
-      "monthly_unit_saving": <number>,
-      "tip_roman_urdu": "<specific action>"
+      "appliance": "AC (1.5 Ton Split)",
+      "current_monthly_units": 150,
+      "suggested_daily_hours": 6,
+      "monthly_unit_saving": 30,
+      "tip_roman_urdu": "AC ko 24°C par set karein aur timer use karein"
     }
   ]
 }
 """
-
-def parse_ai_json(response):
-    raw_text = response.text.strip()
-    if raw_text.startswith("```"):
-        raw_text = raw_text.strip("`")
-        if raw_text.lower().startswith("json"):
-            raw_text = raw_text[4:]
-    return json.loads(raw_text)
 
 # --- Endpoints ---
 
@@ -143,7 +163,7 @@ async def analyze_bill(file: UploadFile = File(...)):
         image_data = await file.read()
         img = Image.open(io.BytesIO(image_data))
 
-        # Step 1: Extract bill info (units, consumer category, bill type)
+        # Step 1: Extract bill info
         response = await call_gemini_with_retry([PROMPT_BILL, img])
         bill_data = parse_ai_json(response)
 
@@ -154,16 +174,17 @@ async def analyze_bill(file: UploadFile = File(...)):
         if total_units <= 0:
             raise Exception("Bill se units nahi nikal paaye. Dobara try karein.")
 
-        # Step 2: Calculate actual rate from NEPRA slabs
+        # Step 2: Calculate actual rate
         rate_per_unit = get_rate_per_unit(total_units, consumer_category)
 
-        # Step 3: Send to Gemini for analysis with the correct rate
+        # Step 3: Estimate appliance breakdown
         appliance_data = [
-            {"appliance": "AC (Estimated)", "current_monthly_units": total_units * 0.25},
-            {"appliance": "Fridge", "current_monthly_units": total_units * 0.15},
-            {"appliance": "Fans & Lights", "current_monthly_units": total_units * 0.30},
-            {"appliance": "Other Appliances", "current_monthly_units": total_units * 0.30}
+            {"appliance": "AC (Estimated)", "current_monthly_units": round(total_units * 0.25, 1)},
+            {"appliance": "Fridge", "current_monthly_units": round(total_units * 0.15, 1)},
+            {"appliance": "Fans & Lights", "current_monthly_units": round(total_units * 0.30, 1)},
+            {"appliance": "Other Appliances", "current_monthly_units": round(total_units * 0.30, 1)}
         ]
+        
         prompt = PROMPT_MANUAL.format(
             appliance_data=json.dumps(appliance_data),
             rate=rate_per_unit
@@ -220,9 +241,8 @@ async def analyze_manual(request: dict):
         if not breakdown:
             raise HTTPException(status_code=400, detail="No valid appliances.")
 
-        # Note: For manual entry, user can still override rate.
-        # But we can auto-calculate from NEPRA slabs if total_units is available.
-        if rate == 35:  # If user didn't change default, auto-calculate
+        # Auto-calculate rate if user didn't change default
+        if rate == 35:
             rate = get_rate_per_unit(total_units, "non-protected")
 
         prompt = PROMPT_MANUAL.format(
