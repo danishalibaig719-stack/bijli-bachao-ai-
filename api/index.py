@@ -2,7 +2,6 @@ import os
 import json
 import asyncio
 import re
-import time
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,7 +33,7 @@ api_key = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key) if api_key else None
 
 if not client:
-    print("WARNING: GEMINI_API_KEY not found in environment variables!")
+    print("WARNING: GEMINI_API_KEY not found!")
 
 # ============================================================
 # NEPRA Tariff Slabs 2026
@@ -94,7 +93,7 @@ def get_cached_rate(total_units: float, consumer_type: str, bill_type: str) -> f
     return get_rate_per_unit(total_units, consumer_type, bill_type)
 
 # ============================================================
-# JSON Parser with Error Handling
+# JSON Parser
 # ============================================================
 def parse_ai_json(response):
     raw_text = response.text.strip()
@@ -136,7 +135,7 @@ def parse_ai_json(response):
             raise ValueError(f"JSON parse failed: {e}")
 
 # ============================================================
-# SMART RETRY with Exponential Backoff
+# SMART RETRY
 # ============================================================
 async def call_gemini_with_retry(contents, max_retries=5, base_delay=1, is_image=False):
     retry_count = 0
@@ -302,29 +301,23 @@ def get_prompt(language: str):
         return PROMPT_MANUAL_ROMAN_URDU
 
 # ============================================================
-# OPTIONS endpoint for CORS preflight
+# OPTIONS
 # ============================================================
 @app.options("/api/analyze-bill")
 async def options_analyze_bill():
-    return JSONResponse(
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Accept",
-        }
-    )
+    return JSONResponse(content={}, headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Accept",
+    })
 
 @app.options("/api/analyze-manual")
 async def options_analyze_manual():
-    return JSONResponse(
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Accept",
-        }
-    )
+    return JSONResponse(content={}, headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Accept",
+    })
 
 # ============================================================
 # API Endpoints
@@ -340,10 +333,9 @@ async def analyze_bill(
     bill_type: str = Form("auto")
 ):
     if not client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing. Please set in Vercel environment variables.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing.")
 
     try:
-        # Read and validate image
         image_data = await file.read()
         
         if not image_data or len(image_data) < 100:
@@ -360,30 +352,23 @@ async def analyze_bill(
                 detail="❌ Image format not supported. Please upload JPG or PNG."
             )
 
-        # Try with image first
         try:
             response = await call_gemini_with_retry([PROMPT_BILL, img], is_image=True)
             bill_data = parse_ai_json(response)
         except Exception as img_error:
             print(f"Image processing failed: {img_error}")
-            # Fallback: try text-only
             print("🔄 Trying text-only fallback...")
             response = await call_gemini_with_retry([PROMPT_BILL_TEXT_FALLBACK], is_image=False)
             bill_data = parse_ai_json(response)
 
-        # ============================================================
-        # CRITICAL: Handle None values from Gemini response
-        # ============================================================
         total_units = bill_data.get("total_units")
         
-        # If total_units is None or 0 or not a number → invalid bill
         if total_units is None:
             raise HTTPException(
                 status_code=400,
                 detail="❌ Bill se units nahi nikal paaye. Clear photo upload karein."
             )
         
-        # Ensure total_units is a number (int or float)
         try:
             total_units = float(total_units)
         except (ValueError, TypeError):
@@ -398,7 +383,6 @@ async def analyze_bill(
                 detail="❌ Bill mein 0 units dikh rahe hain. Please check your bill."
             )
         
-        # Validate units are reasonable (between 1 and 10000)
         if total_units > 10000:
             raise HTTPException(
                 status_code=400,
@@ -411,10 +395,8 @@ async def analyze_bill(
         if bill_type != "auto" and bill_type:
             detected_bill_type = bill_type
 
-        # Calculate rate
         rate_per_unit = get_cached_rate(total_units, consumer_category, detected_bill_type)
 
-        # Estimate appliance breakdown
         appliance_data = [
             {"appliance": "AC (Estimated)", "current_monthly_units": round(total_units * 0.25, 1)},
             {"appliance": "Fridge", "current_monthly_units": round(total_units * 0.15, 1)},
@@ -461,7 +443,7 @@ async def analyze_bill(
 @app.post("/api/analyze-manual")
 async def analyze_manual(request: dict):
     if not client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing. Please set in Vercel environment variables.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing.")
 
     try:
         rate = request.get("rate_per_unit", 35)
@@ -471,7 +453,6 @@ async def analyze_manual(request: dict):
         if not appliances:
             raise HTTPException(status_code=400, detail="❌ Kam az kam ek appliance add karein.")
 
-        # Deterministic calculation with validation
         breakdown = []
         total_units = 0
         
@@ -481,14 +462,13 @@ async def analyze_manual(request: dict):
             qty = app.get("qty", 0)
             hours = app.get("hours", 0)
             
-            # Validate each field
             if not name:
                 continue
             if watt <= 0 or qty <= 0 or hours <= 0:
                 continue
-            if watt > 5000:  # Max wattage sanity check
+            if watt > 5000:
                 continue
-            if hours > 24:  # Max hours per day sanity check
+            if hours > 24:
                 continue
                 
             monthly_units = round((watt * qty * hours * 30) / 1000, 1)
@@ -511,7 +491,6 @@ async def analyze_manual(request: dict):
                 detail="❌ Total units 0 hain. Please check appliance values."
             )
 
-        # Auto-calculate rate if default
         if rate == 35:
             rate = get_cached_rate(total_units, "non-protected", "WAPDA")
 
