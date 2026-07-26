@@ -255,7 +255,7 @@ async function startCamera() {
         startCameraBtn.textContent = '📷 Camera Open';
         startCameraBtn.style.opacity = '0.6';
     } catch (err) {
-        alert('Camera open nahi ho paai. Please allow camera permission.');
+        alert('❌ Camera open nahi ho paai. Please allow camera permission.');
         console.error('Camera error:', err);
     }
 }
@@ -353,13 +353,30 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
             body: formData
         });
 
+        // ============================================================
+        // HANDLE ALL ERROR STATUS CODES
+        // ============================================================
         if (!res.ok) {
             let message = `Server error (${res.status})`;
             try {
                 const err = await res.json();
                 message = err.detail || message;
             } catch (_) {}
-            throw new Error(message);
+            
+            // User-friendly error messages
+            if (res.status === 400) {
+                errorBox.textContent = message.includes("units") 
+                    ? "❌ Bill se units nahi nikal paaye. Clear photo upload karein."
+                    : "❌ Invalid bill image. Please upload a clear photo.";
+            } else if (res.status === 429 || res.status === 503) {
+                errorBox.textContent = "⏳ AI service busy hai. 1-2 minute baad dobara try karein.";
+            } else if (res.status === 500) {
+                errorBox.textContent = "❌ AI service mein masla aaya. Please try again.";
+            } else {
+                errorBox.textContent = `❌ ${message}`;
+            }
+            errorBox.classList.remove("hidden");
+            return;
         }
 
         const data = await res.json();
@@ -415,13 +432,29 @@ document.getElementById("submitScanBtn").addEventListener("click", async () => {
             body: formData
         });
 
+        // ============================================================
+        // HANDLE ALL ERROR STATUS CODES (Same as upload)
+        // ============================================================
         if (!res.ok) {
             let message = `Server error (${res.status})`;
             try {
                 const err = await res.json();
                 message = err.detail || message;
             } catch (_) {}
-            throw new Error(message);
+            
+            if (res.status === 400) {
+                errorBox.textContent = message.includes("units") 
+                    ? "❌ Bill se units nahi nikal paaye. Clear photo upload karein."
+                    : "❌ Invalid bill image. Please upload a clear photo.";
+            } else if (res.status === 429 || res.status === 503) {
+                errorBox.textContent = "⏳ AI service busy hai. 1-2 minute baad dobara try karein.";
+            } else if (res.status === 500) {
+                errorBox.textContent = "❌ AI service mein masla aaya. Please try again.";
+            } else {
+                errorBox.textContent = `❌ ${message}`;
+            }
+            errorBox.classList.remove("hidden");
+            return;
         }
 
         const data = await res.json();
@@ -476,13 +509,27 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
             })
         });
 
+        // ============================================================
+        // HANDLE ALL ERROR STATUS CODES
+        // ============================================================
         if (!res.ok) {
             let message = `Server error (${res.status})`;
             try {
                 const err = await res.json();
                 message = err.detail || message;
             } catch (_) {}
-            throw new Error(message);
+            
+            if (res.status === 400) {
+                errorBox.textContent = "❌ Invalid appliance data. Please check watt, qty and hours.";
+            } else if (res.status === 429 || res.status === 503) {
+                errorBox.textContent = "⏳ AI service busy hai. 1-2 minute baad dobara try karein.";
+            } else if (res.status === 500) {
+                errorBox.textContent = "❌ AI service mein masla aaya. Please try again.";
+            } else {
+                errorBox.textContent = `❌ ${message}`;
+            }
+            errorBox.classList.remove("hidden");
+            return;
         }
 
         const data = await res.json();
