@@ -89,15 +89,12 @@ def get_rate_per_unit(total_units: float, consumer_type: str = "protected", bill
         else:
             return 47.69
 
-# ============================================================
-# Simple Cache for rate calculations
-# ============================================================
 @lru_cache(maxsize=128)
 def get_cached_rate(total_units: float, consumer_type: str, bill_type: str) -> float:
     return get_rate_per_unit(total_units, consumer_type, bill_type)
 
 # ============================================================
-# JSON Parser
+# JSON Parser with Error Handling
 # ============================================================
 def parse_ai_json(response):
     raw_text = response.text.strip()
@@ -139,15 +136,9 @@ def parse_ai_json(response):
             raise ValueError(f"JSON parse failed: {e}")
 
 # ============================================================
-# SMART RETRY LOGIC with Exponential Backoff
+# SMART RETRY with Exponential Backoff
 # ============================================================
-async def call_gemini_with_retry(contents, max_retries=5, base_delay=1):
-    """
-    Smart retry with exponential backoff:
-    - Retry 5 times (up from 3)
-    - Wait: 1s, 2s, 4s, 8s, 16s between retries
-    - Handles 429 (rate limit) and 503 (server busy)
-    """
+async def call_gemini_with_retry(contents, max_retries=5, base_delay=1, is_image=False):
     retry_count = 0
     delay = base_delay
     
@@ -158,19 +149,26 @@ async def call_gemini_with_retry(contents, max_retries=5, base_delay=1):
     
     while retry_count < max_retries:
         try:
-            if isinstance(contents, list) and len(contents) > 1 and isinstance(contents[1], Image.Image):
+            if is_image and retry_count == 0:
                 response = client.models.generate_content(
                     model='gemini-flash-latest',
                     contents=contents,
                     config=generate_config
                 )
             else:
-                response = client.models.generate_content(
-                    model='gemini-flash-latest',
-                    contents=contents,
-                    config=generate_config
-                )
-            # Success! Return response
+                if is_image and retry_count > 0:
+                    text_only = contents[0] if isinstance(contents, list) else contents
+                    response = client.models.generate_content(
+                        model='gemini-flash-latest',
+                        contents=text_only,
+                        config=generate_config
+                    )
+                else:
+                    response = client.models.generate_content(
+                        model='gemini-flash-latest',
+                        contents=contents,
+                        config=generate_config
+                    )
             return response
             
         except Exception as e:
@@ -181,23 +179,22 @@ async def call_gemini_with_retry(contents, max_retries=5, base_delay=1):
                 "unavailable" in error_str or 
                 "rate limit" in error_str or
                 "resource exhausted" in error_str or
-                "busy" in error_str
+                "busy" in error_str or
+                "timeout" in error_str
             )
             
             if is_retryable and retry_count < max_retries - 1:
                 retry_count += 1
-                print(f"⚠️ Gemini API error (attempt {retry_count}/{max_retries}): {e}")
-                print(f"⏳ Waiting {delay}s before retry...")
+                print(f"⚠️ Attempt {retry_count}/{max_retries}: {e}")
+                print(f"⏳ Waiting {delay}s...")
                 await asyncio.sleep(delay)
-                # Exponential backoff: 1, 2, 4, 8, 16 seconds
                 delay *= 2
             else:
-                # Not retryable OR max retries reached
-                print(f"❌ Gemini API final error: {e}")
+                print(f"❌ Final error: {e}")
                 if retry_count >= max_retries - 1:
-                    raise Exception("AI service abhi busy hai. Thodi der baad dobara try karein (1-2 minute).")
+                    raise Exception("AI service abhi busy hai. 1-2 minute baad dobara try karein.")
                 else:
-                    raise Exception(f"AI service mein masla aaya: {e}")
+                    raise Exception(f"Error: {e}")
 
 # ============================================================
 # Prompts
@@ -213,8 +210,19 @@ Return ONLY valid JSON:
 {"total_units": 200, "consumer_category": "non-protected", "bill_type": "WAPDA"}
 """
 
+PROMPT_BILL_TEXT_FALLBACK = """
+You are a Pakistani electricity bill analyzer. A user has uploaded a bill image but we couldn't process it.
+Based on typical Pakistani households, estimate:
+1. Total Units Consumed (number only)
+2. Consumer Category: "protected" or "non-protected" or "lifeline" (default: non-protected)
+3. Bill Type: "WAPDA" or "K-Electric" or "Other" (default: WAPDA)
+
+Return ONLY valid JSON:
+{"total_units": 200, "consumer_category": "non-protected", "bill_type": "WAPDA"}
+"""
+
 PROMPT_MANUAL_ROMAN_URDU = """
-You are a friendly Pakistani electrical energy auditor. Respond in Roman Urdu (Urdu written in English letters).
+You are a friendly Pakistani electrical energy auditor. Respond in Roman Urdu.
 
 Appliance data: {appliance_data}
 Rate per unit (Rs): {rate}
@@ -332,27 +340,81 @@ async def analyze_bill(
     bill_type: str = Form("auto")
 ):
     if not client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing. Please set in Vercel environment variables.")
 
     try:
+        # Read and validate image
         image_data = await file.read()
-        img = Image.open(io.BytesIO(image_data))
+        
+        if not image_data or len(image_data) < 100:
+            raise HTTPException(
+                status_code=400,
+                detail="❌ Invalid image. Please upload a clear bill photo."
+            )
+        
+        try:
+            img = Image.open(io.BytesIO(image_data))
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="❌ Image format not supported. Please upload JPG or PNG."
+            )
 
-        response = await call_gemini_with_retry([PROMPT_BILL, img])
-        bill_data = parse_ai_json(response)
+        # Try with image first
+        try:
+            response = await call_gemini_with_retry([PROMPT_BILL, img], is_image=True)
+            bill_data = parse_ai_json(response)
+        except Exception as img_error:
+            print(f"Image processing failed: {img_error}")
+            # Fallback: try text-only
+            print("🔄 Trying text-only fallback...")
+            response = await call_gemini_with_retry([PROMPT_BILL_TEXT_FALLBACK], is_image=False)
+            bill_data = parse_ai_json(response)
 
-        total_units = bill_data.get("total_units", 0)
+        # ============================================================
+        # CRITICAL: Handle None values from Gemini response
+        # ============================================================
+        total_units = bill_data.get("total_units")
+        
+        # If total_units is None or 0 or not a number → invalid bill
+        if total_units is None:
+            raise HTTPException(
+                status_code=400,
+                detail="❌ Bill se units nahi nikal paaye. Clear photo upload karein."
+            )
+        
+        # Ensure total_units is a number (int or float)
+        try:
+            total_units = float(total_units)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=400,
+                detail="❌ Bill mein invalid units hain. Please check your bill image."
+            )
+        
+        if total_units <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="❌ Bill mein 0 units dikh rahe hain. Please check your bill."
+            )
+        
+        # Validate units are reasonable (between 1 and 10000)
+        if total_units > 10000:
+            raise HTTPException(
+                status_code=400,
+                detail="❌ Units zyada hain (10,000+). Please check your bill image."
+            )
+        
         consumer_category = bill_data.get("consumer_category", "non-protected")
         detected_bill_type = bill_data.get("bill_type", "Other")
         
         if bill_type != "auto" and bill_type:
             detected_bill_type = bill_type
 
-        if total_units <= 0:
-            raise Exception("Bill se units nahi nikal paaye.")
-
+        # Calculate rate
         rate_per_unit = get_cached_rate(total_units, consumer_category, detected_bill_type)
 
+        # Estimate appliance breakdown
         appliance_data = [
             {"appliance": "AC (Estimated)", "current_monthly_units": round(total_units * 0.25, 1)},
             {"appliance": "Fridge", "current_monthly_units": round(total_units * 0.15, 1)},
@@ -387,14 +449,19 @@ async def analyze_bill(
             "appliance_insights": data.get("appliance_insights", [])
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="❌ Bill process nahi ho paaya. Please try again with a clear image."
+        )
 
 @app.post("/api/analyze-manual")
 async def analyze_manual(request: dict):
     if not client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing. Please set in Vercel environment variables.")
 
     try:
         rate = request.get("rate_per_unit", 35)
@@ -402,22 +469,49 @@ async def analyze_manual(request: dict):
         language = request.get("language", "roman_urdu")
 
         if not appliances:
-            raise HTTPException(status_code=400, detail="No appliances provided.")
+            raise HTTPException(status_code=400, detail="❌ Kam az kam ek appliance add karein.")
 
+        # Deterministic calculation with validation
         breakdown = []
         total_units = 0
+        
         for app in appliances:
+            name = app.get("name", "").strip()
             watt = app.get("watt", 0)
             qty = app.get("qty", 0)
             hours = app.get("hours", 0)
-            if watt > 0 and qty > 0 and hours > 0:
-                monthly_units = round((watt * qty * hours * 30) / 1000, 1)
-                breakdown.append({"appliance": app.get("name"), "current_monthly_units": monthly_units})
+            
+            # Validate each field
+            if not name:
+                continue
+            if watt <= 0 or qty <= 0 or hours <= 0:
+                continue
+            if watt > 5000:  # Max wattage sanity check
+                continue
+            if hours > 24:  # Max hours per day sanity check
+                continue
+                
+            monthly_units = round((watt * qty * hours * 30) / 1000, 1)
+            if monthly_units > 0:
+                breakdown.append({
+                    "appliance": name, 
+                    "current_monthly_units": monthly_units
+                })
                 total_units += monthly_units
 
         if not breakdown:
-            raise HTTPException(status_code=400, detail="No valid appliances.")
+            raise HTTPException(
+                status_code=400, 
+                detail="❌ Koi valid appliance nahi mila. Watt, Qty aur Hours sahi se bharein."
+            )
+        
+        if total_units <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="❌ Total units 0 hain. Please check appliance values."
+            )
 
+        # Auto-calculate rate if default
         if rate == 35:
             rate = get_cached_rate(total_units, "non-protected", "WAPDA")
 
@@ -441,6 +535,11 @@ async def analyze_manual(request: dict):
             "appliance_insights": data.get("appliance_insights", [])
         })
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"❌ Error: {str(e)}"
+        )
