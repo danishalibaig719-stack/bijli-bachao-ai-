@@ -1,12 +1,13 @@
 {
   "name": "Bijli Bachao AI",
   "short_name": "Bijli Bachao",
-  "description": "Apne bijli ke bill ko AI se kam karein - appliance-wise personalized tips",
-  "start_url": "./index.html",
+  "description": "AI-powered energy auditor for Pakistani homes",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f7f5",
+  "background_color": "#1a7a4c",
   "theme_color": "#1a7a4c",
   "orientation": "portrait",
+  "categories": ["lifestyle", "utilities", "productivity"],
   "icons": [
     {
       "src": "icon-192.png",
@@ -19,6 +20,13 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-1.png",
+      "sizes": "1080x1920",
+      "type": "image/png"
     }
   ]
 }
