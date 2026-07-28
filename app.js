@@ -1,4 +1,297 @@
 // ============================================================
+// FIREBASE AUTH STATE
+// ============================================================
+let currentUser = null;
+
+// Listen for auth state changes
+auth.onAuthStateChanged(user => {
+    if (user) {
+        currentUser = user;
+        showUserUI(user);
+        loadUserHistory(user.uid);
+    } else {
+        currentUser = null;
+        showGuestUI();
+        document.getElementById('historyList').innerHTML = 
+            '<p style="color:#8a9aaa;text-align:center;padding:20px;">Please login to see your history.</p>';
+    }
+});
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+function showUserUI(user) {
+    document.getElementById('userInfo').classList.add('active');
+    document.getElementById('userEmail').textContent = user.email;
+    document.getElementById('loginBtn').style.display = 'none';
+    document.getElementById('signupBtn').style.display = 'none';
+}
+
+function showGuestUI() {
+    document.getElementById('userInfo').classList.remove('active');
+    document.getElementById('loginBtn').style.display = 'inline-block';
+    document.getElementById('signupBtn').style.display = 'inline-block';
+}
+
+// ============================================================
+// AUTH MODAL
+// ============================================================
+const authModal = document.getElementById('authModal');
+const authModalTitle = document.getElementById('authModalTitle');
+const authModalSub = document.getElementById('authModalSub');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authSubmit = document.getElementById('authSubmit');
+const authToggleLink = document.getElementById('authToggleLink');
+const authToggleText = document.getElementById('authToggleText');
+const authError = document.getElementById('authError');
+
+let isLoginMode = true;
+
+function openAuthModal(mode = 'login') {
+    isLoginMode = mode === 'login';
+    authModal.classList.add('active');
+    authError.classList.remove('active');
+    authEmail.value = '';
+    authPassword.value = '';
+    
+    if (isLoginMode) {
+        authModalTitle.textContent = 'Login';
+        authModalSub.textContent = 'Sign in to save your reports';
+        authSubmit.textContent = 'Login';
+        authToggleText.textContent = "Don't have an account?";
+        authToggleLink.textContent = 'Sign Up';
+    } else {
+        authModalTitle.textContent = 'Sign Up';
+        authModalSub.textContent = 'Create your free account';
+        authSubmit.textContent = 'Sign Up';
+        authToggleText.textContent = 'Already have an account?';
+        authToggleLink.textContent = 'Login';
+    }
+}
+
+function closeAuthModal() {
+    authModal.classList.remove('active');
+}
+
+// Open modal on login/signup click
+document.getElementById('loginBtn').addEventListener('click', () => openAuthModal('login'));
+document.getElementById('signupBtn').addEventListener('click', () => openAuthModal('signup'));
+document.getElementById('closeModal').addEventListener('click', closeAuthModal);
+authModal.addEventListener('click', (e) => {
+    if (e.target === authModal) closeAuthModal();
+});
+
+// Toggle between login/signup
+authToggleLink.addEventListener('click', () => {
+    openAuthModal(isLoginMode ? 'signup' : 'login');
+});
+
+// Enter key support for auth
+authEmail.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') authPassword.focus();
+});
+authPassword.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') authSubmit.click();
+});
+
+// ============================================================
+// AUTH SUBMIT
+// ============================================================
+authSubmit.addEventListener('click', async () => {
+    const email = authEmail.value.trim();
+    const password = authPassword.value.trim();
+    
+    authError.classList.remove('active');
+    
+    if (!email || !password) {
+        authError.textContent = 'Please enter email and password.';
+        authError.classList.add('active');
+        return;
+    }
+    
+    if (password.length < 6) {
+        authError.textContent = 'Password must be at least 6 characters.';
+        authError.classList.add('active');
+        return;
+    }
+    
+    authSubmit.disabled = true;
+    authSubmit.textContent = 'Please wait...';
+    
+    try {
+        if (isLoginMode) {
+            await auth.signInWithEmailAndPassword(email, password);
+        } else {
+            const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+            // Save user profile to Firestore
+            await db.collection('users').doc(userCredential.user.uid).set({
+                email: email,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                totalReports: 0
+            });
+        }
+        closeAuthModal();
+    } catch (error) {
+        authError.textContent = error.message;
+        authError.classList.add('active');
+    } finally {
+        authSubmit.disabled = false;
+        authSubmit.textContent = isLoginMode ? 'Login' : 'Sign Up';
+    }
+});
+
+// ============================================================
+// LOGOUT
+// ============================================================
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await auth.signOut();
+});
+
+// ============================================================
+// SAVE REPORT TO FIRESTORE
+// ============================================================
+async function saveReportToFirestore(reportData) {
+    if (!currentUser) {
+        console.log('User not logged in. Report not saved.');
+        return;
+    }
+    
+    try {
+        const reportRef = db.collection('reports').doc();
+        await reportRef.set({
+            userId: currentUser.uid,
+            ...reportData,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            reportId: reportRef.id
+        });
+        
+        // Update user's report count
+        await db.collection('users').doc(currentUser.uid).update({
+            totalReports: firebase.firestore.FieldValue.increment(1)
+        });
+        
+        console.log('✅ Report saved successfully!');
+        // Reload history if user is on history tab
+        if (document.getElementById('tab-history').classList.contains('active')) {
+            loadUserHistory(currentUser.uid);
+        }
+    } catch (error) {
+        console.error('❌ Error saving report:', error);
+    }
+}
+
+// ============================================================
+// LOAD USER HISTORY
+// ============================================================
+async function loadUserHistory(userId) {
+    try {
+        const snapshot = await db.collection('reports')
+            .where('userId', '==', userId)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get();
+        
+        const reports = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            reports.push({ 
+                id: doc.id, 
+                ...data,
+                // Convert Firestore timestamp to Date
+                createdAt: data.createdAt ? data.createdAt.toDate() : null
+            });
+        });
+        
+        renderHistory(reports);
+    } catch (error) {
+        console.error('Error loading history:', error);
+        document.getElementById('historyList').innerHTML = 
+            '<p style="color:#d32f2f;text-align:center;padding:20px;">Error loading history. Please try again.</p>';
+    }
+}
+
+function renderHistory(reports) {
+    const historyContainer = document.getElementById('historyList');
+    
+    if (reports.length === 0) {
+        historyContainer.innerHTML = 
+            '<p style="color:#8a9aaa;text-align:center;padding:20px;">📭 No reports yet. Generate your first report!</p>';
+        return;
+    }
+    
+    let html = '';
+    reports.forEach((report, index) => {
+        const date = report.createdAt ? report.createdAt.toLocaleDateString('en-PK', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        }) : 'N/A';
+        
+        const units = report.total_units || '?';
+        const savings = report.estimated_monthly_saving_units || '?';
+        const source = report.source || 'unknown';
+        const sourceEmoji = source === 'bill_upload' ? '📄' : 
+                           source === 'scan' ? '📷' : 
+                           source === 'manual' ? '🏠' : '📊';
+        
+        html += `
+            <div class="history-item" onclick="viewReport('${report.id}')">
+                <div class="history-left">
+                    <span class="history-index">#${index + 1}</span>
+                    <span class="history-date">${date}</span>
+                    <span style="font-size:13px;color:#8a9aaa;">${sourceEmoji}</span>
+                </div>
+                <div class="history-right">
+                    <span class="history-units">⚡ ${units} units</span>
+                    <span class="history-savings">Save ${savings} units</span>
+                </div>
+            </div>
+        `;
+    });
+    historyContainer.innerHTML = html;
+}
+
+// ============================================================
+// VIEW REPORT (History Click)
+// ============================================================
+window.viewReport = function(reportId) {
+    // Load full report from Firestore
+    db.collection('reports').doc(reportId).get()
+        .then(doc => {
+            if (doc.exists) {
+                const data = doc.data();
+                // Show report in a modal or alert
+                let summary = data.overall_summary || 'No summary available';
+                let units = data.total_units || 'N/A';
+                let savings = data.estimated_monthly_saving_units || 'N/A';
+                let insights = data.appliance_insights || [];
+                
+                let msg = `📊 Report Details\n`;
+                msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+                msg += `⚡ Total Units: ${units}\n`;
+                msg += `💰 Savings: ${savings} units/month\n`;
+                msg += `📝 Summary: ${summary}\n\n`;
+                
+                if (insights.length > 0) {
+                    msg += `🔧 Appliance Tips:\n`;
+                    insights.slice(0, 3).forEach((item, i) => {
+                        msg += `  ${i+1}. ${item.appliance}: ${item.tip || ''}\n`;
+                    });
+                }
+                
+                alert(msg);
+            } else {
+                alert('Report not found.');
+            }
+        })
+        .catch(err => {
+            console.error('Error loading report:', err);
+            alert('Error loading report. Please try again.');
+        });
+};
+
+// ============================================================
 // LANGUAGE SELECTOR
 // ============================================================
 const languageSelect = document.getElementById("languageSelect");
@@ -16,6 +309,11 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
         document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
         btn.classList.add("active");
         document.getElementById(btn.dataset.tab).classList.add("active");
+        
+        // Reload history when history tab is clicked
+        if (btn.dataset.tab === "tab-history" && currentUser) {
+            loadUserHistory(currentUser.uid);
+        }
         
         if (btn.dataset.tab !== "tab-scan") {
             stopCamera();
@@ -71,7 +369,7 @@ function collectAppliances() {
 }
 
 // ============================================================
-// UPLOAD STATUS INDICATOR
+// UPLOAD STATUS
 // ============================================================
 const uploadStatus = document.getElementById("uploadStatus");
 const uploadStatusText = document.getElementById("uploadStatusText");
@@ -290,7 +588,6 @@ function captureImage() {
     }, 'image/jpeg', 0.9);
 }
 
-// Camera Event Listeners
 startCameraBtn.addEventListener('click', startCamera);
 captureBtn.addEventListener('click', captureImage);
 closeCameraBtn.addEventListener('click', () => {
@@ -304,7 +601,7 @@ retakeBtn.addEventListener('click', () => {
 });
 
 // ============================================================
-// OPTION 1: BILL UPLOAD (File Picker)
+// OPTION 1: BILL UPLOAD
 // ============================================================
 const uploadBtn = document.getElementById('uploadBtn');
 const billImageInput = document.getElementById('billImageInput');
@@ -377,6 +674,22 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
 
         const data = await res.json();
 
+        // Save to Firestore if user is logged in
+        if (currentUser) {
+            await saveReportToFirestore({
+                total_units: data.total_units,
+                rate_per_unit: data.rate_per_unit,
+                bill_type: data.bill_type,
+                consumer_category: data.consumer_category,
+                risk_level: data.risk_level,
+                estimated_monthly_saving_units: data.estimated_monthly_saving_units,
+                estimated_monthly_saving_rs: data.estimated_monthly_saving_rs,
+                overall_summary: data.overall_summary,
+                appliance_insights: data.appliance_insights,
+                source: 'bill_upload'
+            });
+        }
+
         if (data.rate_per_unit) {
             rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit | ${data.bill_type || 'Auto'} | ${data.consumer_category || 'N/A'}`;
             rateDisplay.classList.add("active");
@@ -395,7 +708,7 @@ document.getElementById("submitBillBtn").addEventListener("click", async () => {
 });
 
 // ============================================================
-// OPTION 2: SCAN BILL (Camera)
+// OPTION 2: SCAN BILL
 // ============================================================
 document.getElementById("submitScanBtn").addEventListener("click", async () => {
     const billType = document.getElementById("billTypeSelectScan").value;
@@ -451,6 +764,21 @@ document.getElementById("submitScanBtn").addEventListener("click", async () => {
         }
 
         const data = await res.json();
+
+        if (currentUser) {
+            await saveReportToFirestore({
+                total_units: data.total_units,
+                rate_per_unit: data.rate_per_unit,
+                bill_type: data.bill_type,
+                consumer_category: data.consumer_category,
+                risk_level: data.risk_level,
+                estimated_monthly_saving_units: data.estimated_monthly_saving_units,
+                estimated_monthly_saving_rs: data.estimated_monthly_saving_rs,
+                overall_summary: data.overall_summary,
+                appliance_insights: data.appliance_insights,
+                source: 'scan'
+            });
+        }
 
         if (data.rate_per_unit) {
             rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit | ${data.bill_type || 'Auto'} | ${data.consumer_category || 'N/A'}`;
@@ -523,6 +851,19 @@ document.getElementById("submitManualBtn").addEventListener("click", async () =>
         }
 
         const data = await res.json();
+
+        if (currentUser) {
+            await saveReportToFirestore({
+                total_units: data.total_units,
+                rate_per_unit: data.rate_per_unit,
+                risk_level: data.risk_level,
+                estimated_monthly_saving_units: data.estimated_monthly_saving_units,
+                estimated_monthly_saving_rs: data.estimated_monthly_saving_rs,
+                overall_summary: data.overall_summary,
+                appliance_insights: data.appliance_insights,
+                source: 'manual'
+            });
+        }
 
         if (data.rate_per_unit) {
             rateDisplay.textContent = `💰 Rate: Rs ${data.rate_per_unit}/unit`;
