@@ -1294,15 +1294,16 @@ select:focus {
     // ============================================================
     // FIREBASE CONFIGURATION
     // ============================================================
-    const firebaseConfig = {
-        apiKey: "AIzaSyDE3BnecUPgPleJN7Yazi1cuTLALk8xhAU",
-        authDomain: "bijli-bachao-ai.firebaseapp.com",
-        projectId: "bijli-bachao-ai",
-        storageBucket: "bijli-bachao-ai.firebasestorage.app",
-        messagingSenderId: "431368255566",
-        appId: "1:431368255566:web:936fcd164062f576cb2b1f",
-        measurementId: "G-9DETB3E3VN"
-    };
+   // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyDE3BnecUPgPleJN7Yazi1cuTlALk8xhAU",
+  authDomain: "bijli-bachao-ai.firebaseapp.com",
+  projectId: "bijli-bachao-ai",
+  storageBucket: "bijli-bachao-ai.firebasestorage.app",
+  messagingSenderId: "431368255566",
+  appId: "1:431368255566:web:936fcd164062f576cb2b1f",
+  measurementId: "G-9DETB3E3VN"
+};
 
     // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
