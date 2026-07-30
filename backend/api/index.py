@@ -14,11 +14,18 @@ from functools import lru_cache
 app = FastAPI()
 
 # ============================================================
-# CORS
+# CORS - Allow Cloudflare Pages & Workers
 # ============================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://bijli-bachao-ai.danishalibaig719.workers.dev",
+        "https://*.workers.dev",
+        "https://bijli-bachao-ai.pages.dev",
+        "https://*.pages.dev",
+        "http://localhost:3000",
+        "http://localhost:5173"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,7 +40,7 @@ api_key = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key) if api_key else None
 
 if not client:
-    print("WARNING: GEMINI_API_KEY not found!")
+    print("WARNING: GEMINI_API_KEY not found in environment variables!")
 
 # ============================================================
 # NEPRA Tariff Slabs 2026
@@ -135,7 +142,7 @@ def parse_ai_json(response):
             raise ValueError(f"JSON parse failed: {e}")
 
 # ============================================================
-# SMART RETRY
+# Retry Logic
 # ============================================================
 async def call_gemini_with_retry(contents, max_retries=5, base_delay=1, is_image=False):
     retry_count = 0
@@ -221,7 +228,7 @@ Return ONLY valid JSON:
 """
 
 PROMPT_MANUAL_ROMAN_URDU = """
-You are a friendly Pakistani electrical energy auditor. Respond in Roman Urdu.
+You are a friendly Pakistani electrical energy auditor. Respond in Roman Urdu (Urdu written in English letters).
 
 Appliance data: {appliance_data}
 Rate per unit (Rs): {rate}
@@ -301,23 +308,29 @@ def get_prompt(language: str):
         return PROMPT_MANUAL_ROMAN_URDU
 
 # ============================================================
-# OPTIONS
+# OPTIONS endpoint for CORS preflight
 # ============================================================
 @app.options("/api/analyze-bill")
 async def options_analyze_bill():
-    return JSONResponse(content={}, headers={
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Accept",
-    })
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Accept",
+        }
+    )
 
 @app.options("/api/analyze-manual")
 async def options_analyze_manual():
-    return JSONResponse(content={}, headers={
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Accept",
-    })
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Accept",
+        }
+    )
 
 # ============================================================
 # API Endpoints
