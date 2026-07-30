@@ -14,63 +14,15 @@ from functools import lru_cache
 app = FastAPI()
 
 # ============================================================
-# CORS - Complete Configuration for Cloudflare
+# CORS - Regex-based so future domain changes don't break it
 # ============================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://bijli-bachao-ai.danishalibaig719.workers.dev",
-        "https://*.workers.dev",
-        "https://bijli-bachao-ai.pages.dev",
-        "https://*.pages.dev",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:8000"
-    ],
+    allow_origin_regex=r"https://.*\.(workers\.dev|pages\.dev|vercel\.app)$|http://localhost(:\d+)?",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept", "Authorization", "Origin", "X-Requested-With"],
-    expose_headers=["Content-Length", "X-Kuma-Revision"],
-    max_age=600,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-# ============================================================
-# OPTIONS Handlers for Preflight Requests
-# ============================================================
-@app.options("/api/analyze-bill")
-async def options_analyze_bill():
-    return JSONResponse(
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "https://bijli-bachao-ai.danishalibaig719.workers.dev",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization",
-            "Access-Control-Allow-Credentials": "true",
-        }
-    )
-
-@app.options("/api/analyze-manual")
-async def options_analyze_manual():
-    return JSONResponse(
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "https://bijli-bachao-ai.danishalibaig719.workers.dev",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization",
-            "Access-Control-Allow-Credentials": "true",
-        }
-    )
-
-@app.options("/api")
-async def options_root():
-    return JSONResponse(
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Accept",
-        }
-    )
 
 # ============================================================
 # Gemini Client
