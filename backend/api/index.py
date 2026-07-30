@@ -14,7 +14,7 @@ from functools import lru_cache
 app = FastAPI()
 
 # ============================================================
-# CORS - Allow Cloudflare Pages & Workers
+# CORS - Complete Configuration for Cloudflare
 # ============================================================
 app.add_middleware(
     CORSMiddleware,
@@ -24,14 +24,53 @@ app.add_middleware(
         "https://bijli-bachao-ai.pages.dev",
         "https://*.pages.dev",
         "http://localhost:3000",
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "http://localhost:8000"
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept", "Authorization", "Origin", "X-Requested-With"],
+    expose_headers=["Content-Length", "X-Kuma-Revision"],
     max_age=600,
 )
+
+# ============================================================
+# OPTIONS Handlers for Preflight Requests
+# ============================================================
+@app.options("/api/analyze-bill")
+async def options_analyze_bill():
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "https://bijli-bachao-ai.danishalibaig719.workers.dev",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization",
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
+
+@app.options("/api/analyze-manual")
+async def options_analyze_manual():
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "https://bijli-bachao-ai.danishalibaig719.workers.dev",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization",
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
+
+@app.options("/api")
+async def options_root():
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Accept",
+        }
+    )
 
 # ============================================================
 # Gemini Client
@@ -142,7 +181,7 @@ def parse_ai_json(response):
             raise ValueError(f"JSON parse failed: {e}")
 
 # ============================================================
-# Retry Logic
+# Retry Logic with Exponential Backoff
 # ============================================================
 async def call_gemini_with_retry(contents, max_retries=5, base_delay=1, is_image=False):
     retry_count = 0
@@ -308,37 +347,15 @@ def get_prompt(language: str):
         return PROMPT_MANUAL_ROMAN_URDU
 
 # ============================================================
-# OPTIONS endpoint for CORS preflight
-# ============================================================
-@app.options("/api/analyze-bill")
-async def options_analyze_bill():
-    return JSONResponse(
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Accept",
-        }
-    )
-
-@app.options("/api/analyze-manual")
-async def options_analyze_manual():
-    return JSONResponse(
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Accept",
-        }
-    )
-
-# ============================================================
-# API Endpoints
+# Health Check
 # ============================================================
 @app.get("/api")
 async def health_check():
     return {"status": "ok", "message": "Bijli Bachao AI backend is running"}
 
+# ============================================================
+# API Endpoints
+# ============================================================
 @app.post("/api/analyze-bill")
 async def analyze_bill(
     file: UploadFile = File(...),
@@ -346,7 +363,7 @@ async def analyze_bill(
     bill_type: str = Form("auto")
 ):
     if not client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing. Please set in Vercel environment variables.")
 
     try:
         image_data = await file.read()
@@ -456,7 +473,7 @@ async def analyze_bill(
 @app.post("/api/analyze-manual")
 async def analyze_manual(request: dict):
     if not client:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing. Please set in Vercel environment variables.")
 
     try:
         rate = request.get("rate_per_unit", 35)
