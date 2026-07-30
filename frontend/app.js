@@ -1,7 +1,7 @@
 // ============================================================
 // API BASE URL - Backend URL (Vercel)
 // ============================================================
-window.API_BASE_URL = "https://bijli-bachao-ai-rgg3.vercel.app";
+window.API_BASE_URL = "https://bijli-bachao-ai.vercel.app";
 
 // ============================================================
 // LANGUAGE SELECTOR
